@@ -142,7 +142,8 @@ const commands = {
   desktop: async () => { await ensureDesktop(); addresses(); await npm('run', 'dev'); },
   mock: async () => { await ensureDesktop(); addresses(); await npm('run', 'mock:chat'); },
   build: async () => { await ensureDesktop(); await npm('run', 'build'); await gradle('assembleDebug'); },
-  'android-build': async () => { await gradle('assembleDebug'); console.log('\nAPK: android-app/app/build/outputs/apk/debug/app-debug.apk'); },
+  'desktop-build': async () => { await ensureDesktop(); await npm('run', 'desktop:make'); },
+  'android-build': async () => { await gradle('assembleDebug'); console.log('\nAPK: dist/MeowLingo-android-debug.apk'); },
   install: () => install(false),
   'android-run': () => install(true),
   devices,
@@ -160,7 +161,8 @@ setup          Install npm dependencies and create .env if missing
 mock           Start the desktop client with mock chat
 desktop        Start the desktop client and watch Project Zomboid logs
 build          Build both clients
-android-build  Build the debug APK
+desktop-build  Build desktop installers into dist/
+android-build  Build the debug APK into dist/
 install        Build and install the APK on the selected device
 android-run    Build, install, and open the Android app
 devices        List Android devices
@@ -186,7 +188,7 @@ async function main() {
     ['usb-connect', 'Connect over USB to a running desktop'], ['usb-disconnect', 'Disconnect USB'],
     ['mock', 'Start the mock desktop client'], ['all', 'Install Android and start the live desktop client'],
     ['android-run', 'Build, install, and open Android'], ['android-build', 'Build the Android APK'],
-    ['build', 'Build both clients'], ['check', 'Check the project'], ['devices', 'List Android devices'],
+    ['desktop-build', 'Build desktop installers'], ['build', 'Build both clients'], ['check', 'Check the project'], ['devices', 'List Android devices'],
     ['setup', 'Install desktop dependencies'], ['doctor', 'Check the environment'], ['desktop', 'Start the desktop client with live game logs'],
   ];
   while (true) {

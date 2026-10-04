@@ -35,19 +35,16 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew testDebugUnitTest lintDebug
-          mkdir -p ../release-assets
           if [ -n "$ANDROID_KEYSTORE_PATH" ]; then
             ./gradlew assembleRelease
-            cp app/build/outputs/apk/release/app-release.apk ../release-assets/MeowLingo-android.apk
           else
             echo '::warning::No Android release key configured; building a debug-signed APK. Configure signing secrets for stable upgradeable releases.'
             ./gradlew assembleDebug
-            cp app/build/outputs/apk/debug/app-debug.apk ../release-assets/MeowLingo-android-debug.apk
           fi
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: release-assets/*.apk
+          path: dist/*.apk
           if-no-files-found: error
   desktop:
     strategy:
@@ -81,15 +78,10 @@ jobs:
         if: runner.os == 'macOS'
         run: npm run desktop:smoke
       - run: npm run desktop:make
-      - name: Collect installers
-        shell: bash
-        run: |
-          mkdir -p ../release-assets
-          find out/make -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.zip' \) -exec sh -c 'cp "$1" "../release-assets/MeowLingo-${{ matrix.platform }}-${{ matrix.arch }}-$(basename "$1")"' _ {} \;
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
-          path: release-assets/*
+          path: dist/*
           if-no-files-found: error
   publish:
     if: github.event_name == 'release'
@@ -100,11 +92,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: release-assets
+          path: dist
           merge-multiple: true
       - name: Attach files to release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber

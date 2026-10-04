@@ -172,7 +172,7 @@ cd android-app
 ./gradlew lintDebug testDebugUnitTest
 ```
 
-Windows: use `gradlew.bat`. Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
+Windows: use `gradlew.bat`. Debug APK is exported to the project root: `dist/MeowLingo-android-debug.apk`.
 
 Android discovers and connects to the desktop automatically. If discovery is unavailable, enter `ws://<desktop-LAN-IP>:8765` in connection settings, then Connect. For the standard Android emulator use `ws://10.0.2.2:8765`. Both devices must be able to reach each other on the same network.
 
@@ -274,3 +274,13 @@ Use `OPENAI_API_KEY` and `OPENAI_MODEL` in the desktop `.env`. Explanation works
 Explanations can be collapsed and reopened without another API request. Android retains results while the message is in its current session, and desktop caches results and deduplicates concurrent requests while messages remain in its history (at least 200 messages). Cache is in memory; restarting the desktop clears it. An expired message reports that it is unavailable. Restart the updated desktop and install the updated Android APK together.
 
 Context explanation instructions live in `desktop-client/config/context-explanation.json` under `instructions`. Edit this file to adjust the prompt; CLI reads it for each new explanation request. Cached explanations remain unchanged. The config is included in desktop packages.
+
+
+### Local build output
+
+All installable builds are collected in the root `dist/` directory (ignored by Git):
+- `node launch.mjs android-build`: `dist/MeowLingo-android-debug.apk`.
+- `node launch.mjs desktop-build`: desktop installers and archives named by platform and architecture.
+- Android `assembleRelease`: `dist/MeowLingo-android-release.apk` when signing is configured, or an explicitly named unsigned APK otherwise.
+
+Direct Gradle assemble commands also export APKs automatically. Desktop `npm run desktop:make` exports installers automatically. Compiler outputs and packaging intermediates stay in their existing build directories. GitHub Actions uploads and publishes files from the same root `dist/` directory.

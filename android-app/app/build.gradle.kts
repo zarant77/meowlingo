@@ -45,3 +45,14 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
+
+// Keep Gradle intermediates in build/ and export installable APKs to the shared dist/.
+listOf("Debug", "Release").forEach { variant ->
+    val variantName = variant.lowercase()
+    val exportApk = tasks.register<Copy>("export${variant}Apk") {
+        from(layout.buildDirectory.dir("outputs/apk/$variantName")) { include("*.apk") }
+        into(rootProject.layout.projectDirectory.dir("../dist"))
+        rename { name -> "MeowLingo-android-$variantName" + if (name.contains("unsigned")) "-unsigned.apk" else ".apk" }
+    }
+    tasks.matching { it.name == "assemble$variant" }.configureEach { finalizedBy(exportApk) }
+}

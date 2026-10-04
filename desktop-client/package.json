@@ -16,7 +16,7 @@
     "desktop:dev": "npm run build && electron .",
     "desktop:prepare": "npm run build && node scripts/build-native.mjs",
     "desktop:package": "npm run desktop:prepare && electron-forge package",
-    "desktop:make": "npm run desktop:prepare && electron-forge make && node scripts/make-dmg.mjs",
+    "desktop:make": "npm run desktop:prepare && electron-forge make && node scripts/make-dmg.mjs && node ../scripts/collect-desktop-builds.mjs",
     "desktop:smoke": "npm run build && electron test/electron-smoke.cjs"
   },
   "dependencies": {
