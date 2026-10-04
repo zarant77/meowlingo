@@ -1,0 +1,229 @@
+# MeowLingo
+
+A second-screen Project Zomboid messenger. The desktop reads new game chat messages, passes them through a translation interface, and streams them to Android. Android replies use the selected translator, select a destination channel and are copied to the desktop clipboard. When Zomboid is foreground, the desktop attempts T, Ctrl+V, Enter.
+
+**Incoming translation is currently passthrough. Replies bypass translation and are copied as received.** No OpenAI calls are made. The diagram below shows the intended translation flow once real translation is enabled.
+
+```text
+Project Zomboid
+      │
+      │ chat log
+      ▼
+MeowLingo Desktop
+      │
+      ├── translate foreign → Ukrainian
+      │
+      ▼
+MeowLingo Android
+      │
+      │ Ukrainian reply
+      ▼
+MeowLingo Desktop
+      │
+      ├── translate Ukrainian → English
+      └── copy to clipboard
+
+Player:
+T → Cmd/Ctrl+V → Enter
+```
+
+## Project structure
+
+- `launch.mjs`: cross-platform console launcher with an interactive menu.
+- `desktop-client/`: Node.js + TypeScript, ws, Zod, clipboardy, dotenv, tsx, and bonjour-service.
+- `android-app/`: native Kotlin + Compose Material 3, MVVM, Coroutines, OkHttp, kotlinx.serialization, and DataStore.
+- `shared/`: protocol documentation and language-independent JSON examples.
+
+`ChatSource` supplies incoming messages; `ProjectZomboidLogSource` handles real logs and `MockChatSource` supplies test input. `Translator` defines incoming and outgoing translation methods for future integration. The mock provider uses `PassthroughTranslator`; OpenAI translates incoming chat to Ukrainian and replies to English before copying to the clipboard. The WebSocket server broadcasts chat, retains the latest 200 messages in memory for reconnect, and sends reply results only to the sender.
+
+Android keeps session state in `ChatSession`, exposed by its ViewModel. A user-started foreground service owns the ongoing desktop connection so messages can arrive while the screen is locked or the app is backgrounded. Disconnect stops the service and automatic retries. The last address, selected desktop identity, auto-connect preference, and muted channels are saved with DataStore; chat history is kept in memory (up to 1,000 messages).
+
+## Console launcher
+
+Requires Node.js 22+, JDK 17, Android SDK 36, and platform-tools. Run from the project root:
+
+```sh
+node launch.mjs                # interactive menu
+node launch.mjs setup          # install desktop dependencies; create .env if missing
+node launch.mjs desktop        # watch actual Project Zomboid logs
+node launch.mjs mock           # simulated chat, unchanged text
+node launch.mjs android-build  # build debug APK
+node launch.mjs install        # build and install APK
+node launch.mjs android-run    # build, install, and open Android
+node launch.mjs all            # install/open Android, then start desktop with live logs
+node launch.mjs build          # build both clients
+node launch.mjs check          # desktop/launcher typecheck/tests + Android build/tests
+node launch.mjs devices        # list adb devices
+node launch.mjs usb            # build/install Android and start desktop over USB
+node launch.mjs usb-connect    # connect an installed app to a running desktop over USB
+node launch.mjs usb-disconnect # disconnect Android and remove the USB tunnel
+node launch.mjs doctor         # inspect required tools
+node launch.mjs help
+```
+
+Enable USB debugging and authorize your desktop on your phone, or start an emulator. With multiple connected devices, select one explicitly:
+
+```sh
+node launch.mjs android-run --device emulator-5554
+```
+
+The launcher resolves its paths relative to itself. It locates adb using `android-app/local.properties`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, the operating system's default SDK directory, or PATH. Installation uses `adb install -r` to retain app data. Stop the desktop with Ctrl+C.
+
+## Automatic local-network connection
+
+Start the desktop and open Android on the same local network. The app searches automatically and connects without typing an IP address. The desktop advertises `_meowlingo._tcp.local` using mDNS/DNS-SD; Android uses its native [Network Service Discovery API](https://developer.android.com/develop/connectivity/wifi/use-nsd). The advertised port follows `MEOWLINGO_PORT`, including custom ports.
+
+A single discovered desktop is selected automatically. If several are available, Android uses the previously selected desktop when present; otherwise choose one in connection settings. The choice is remembered by service identity rather than by IP address. The auto-connect switch is saved. Manual connection remains available.
+
+Discovery runs while Android is visible and releases its multicast lock when the app is backgrounded. An established connection continues through the foreground service. Disconnect pauses auto-connect for the current app session; **Search for desktop** resumes it. Typing a manual address also pauses auto-connect so discovery cannot replace your input or manual connection. Already connected sessions are never switched automatically.
+
+Keep `MEOWLINGO_HOST=0.0.0.0` (the default) for LAN advertising. Set `MEOWLINGO_DISCOVERY=false` to disable desktop advertising. A loopback or specific-address bind skips advertising and requires a manual connection.
+
+Allow multicast UDP 5353 and the configured WebSocket TCP port through the desktop firewall. Guest Wi-Fi, client isolation, VPN routing, and routers that block multicast can prevent discovery or connectivity. In those cases use the manual address. Standard Android emulators may not receive LAN multicast; use `ws://10.0.2.2:8765` manually when needed. Discovery does not authenticate the desktop; this MVP remains intended for a trusted LAN.
+
+## USB cable connection
+
+USB provides an alternative to local-network discovery. The launcher uses [adb reverse port forwarding](https://android.googlesource.com/platform/packages/modules/adb/+/refs/heads/main/docs/user/adb.1.md) so Android connects to `ws://127.0.0.1:<port>` and adb carries that connection to the desktop. The chat protocol and clipboard flow are unchanged. Wi-Fi is not required.
+
+1. Enable Developer options and USB debugging on the phone.
+2. Connect a USB data cable and authorize this computer when the phone prompts.
+3. Run the full USB flow:
+
+```sh
+node launch.mjs usb
+```
+
+This builds and installs the latest Android app, creates the reverse tunnel, opens Android with its USB address automatically, and starts the desktop client with live logs. Android reconnects while the desktop starts. If the desktop is already running and the current Android build is installed, use:
+
+```sh
+node launch.mjs usb-connect
+```
+
+With multiple devices, append `--device SERIAL`. USB commands verify that the selected phone uses a wired adb transport; explicit emulator targets are also supported for testing. The tunnel uses `MEOWLINGO_PORT` from the environment or `desktop-client/.env`. Keep the desktop listener accessible through localhost (`MEOWLINGO_HOST=0.0.0.0` or `127.0.0.1`). Android receives the selected port as a launcher intent and temporarily pauses LAN auto-connect for this session.
+
+Unplugging the cable loses the tunnel. Plug it back in and rerun `usb-connect`. To stop this connection explicitly:
+
+```sh
+node launch.mjs usb-disconnect
+```
+
+This disconnects Android and removes only the configured MeowLingo reverse-port mapping. The desktop service stays running. Ctrl+C stops a desktop launched by `usb`; the tunnel remains until cable disconnection or `usb-disconnect`. To return to Wi-Fi, use **Search for desktop** in Android connection settings.
+
+The equivalent manual setup for the default port is `adb reverse tcp:8765 tcp:8765`, followed by connecting Android to `ws://127.0.0.1:8765`. This development connection requires adb/platform-tools and USB debugging; simply charging the phone does not establish it.
+
+Launcher USB command tests use a simulated adb executable on macOS/Linux: `node --test launcher.test.mjs`. A real-device test is still needed to verify your phone's USB authorization and transport.
+
+## Live game chat
+
+The default directory is `~/Zomboid/Logs` on macOS and `%USERPROFILE%\Zomboid\Logs` on Windows. The reader selects the newest top-level `YYYY-MM-DD_HH-MM_client chat <player>.txt` by session filename, ignoring debug logs and archived directories.
+
+It polls every 750 ms, reads only appended bytes, waits for complete lines, preserves partial UTF-8 sequences, and switches to a newer session file automatically. File truncation and replacement are handled. Byte offsets prevent processing the same appended line twice; identical messages written as separate lines remain separate messages.
+
+The parser follows the observed game format:
+
+```text
+[03-10-26 19:53:12.463][info] Got message from server: ChatMessage{chat=General, author='Player', text='Hello!'}.
+```
+
+Channel names and player text remain as provided by the game, including localized channel names. Known `<RGB:...>`, `<SPACE>`, and `<LINE>` formatting is normalized for display. Log timestamps use the desktop's local timezone and are sent as ISO-8601 UTC. Non-chat and outgoing diagnostic lines are ignored.
+
+By default, the existing file is tailed from its end: old messages are not imported. New sessions discovered after startup are read from their beginning. Set `MEOWLINGO_READ_HISTORY=true` to import the current file on startup for testing or reviewing the current session. A missing log directory or file is retried automatically; source status appears in Android connection settings.
+
+```env
+MEOWLINGO_HOST=0.0.0.0
+MEOWLINGO_PORT=8765
+# Optional: override the default log directory.
+# MEOWLINGO_LOG_DIR=/your/path/to/Zomboid/Logs
+MEOWLINGO_READ_HISTORY=false
+MEOWLINGO_DISCOVERY=true
+OPENAI_API_KEY=
+```
+
+Keep API keys on desktop only. The current placeholder never uses them.
+
+## Desktop commands
+
+```sh
+cd desktop-client
+npm ci
+cp .env.example .env
+npm run dev
+```
+
+PowerShell: `Copy-Item .env.example .env`. The server defaults to `0.0.0.0:8765`; allow this port through your desktop firewall on the trusted LAN. Run one server per port.
+
+```sh
+npm run mock:chat              # alternate input, no game required
+npm run build
+npm run typecheck
+npm test
+npm start                     # compiled service with live logs
+npm start -- --mock-chat       # compiled service with simulated input
+```
+
+## Android
+
+Open `android-app/` in Android Studio, select JDK 17, sync Gradle, and run `app` on Android 8/API 26 or newer. Install SDK 36 and set `ANDROID_HOME` or create ignored `android-app/local.properties` with `sdk.dir=/your/sdk/path`.
+
+```sh
+cd android-app
+./gradlew assembleDebug
+./gradlew installDebug
+./gradlew lintDebug testDebugUnitTest
+```
+
+Windows: use `gradlew.bat`. Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
+
+Android discovers and connects to the desktop automatically. If discovery is unavailable, enter `ws://<desktop-LAN-IP>:8765` in connection settings, then Connect. For the standard Android emulator use `ws://10.0.2.2:8765`. Both devices must be able to reach each other on the same network.
+
+The messenger includes light/dark themes, incoming/outgoing bubbles, author and time labels, channel filters, unread badges, search, and a jump-to-latest button. New messages do not pull you away from older messages while scrolling. When a future real translation differs from the source, incoming originals can be expanded.
+
+To enable alerts, open connection settings and choose **Enable / manage notifications**. Android 13+ also asks for notification permission when you connect. New background messages generate a notification that opens their channel. Already replayed messages do not notify. Use **Mute channel** on a selected channel to suppress its alerts without hiding its messages; unread badges still update. A quiet ongoing notification shows connection status and provides Disconnect. These use Android's [notification permission](https://developer.android.com/develop/ui/views/notifications/notification-permission) and [remote messaging foreground service](https://developer.android.com/develop/background-work/services/fgs/service-types) mechanisms.
+
+## Test the full flow
+
+1. Start `node launch.mjs desktop`, or `node launch.mjs mock` without the game.
+2. Open Android on the same network. It should discover and connect to the desktop automatically; allow notifications when prompted. If several desktops are found, choose one in settings.
+3. Generate a new in-game message. Observe its author, text, channel, and time; filter its channel or search for its text.
+4. Send a reply from the bottom composer. It appears pending, then shows **Keys sent to game** or **Copied to PC**. The text is unchanged by the placeholder. Paste into a desktop editor or into the selected game chat.
+5. Change channels to inspect unread badges. Background Android to test alerts; muted channels remain quiet.
+6. Restart the desktop or interrupt the network to test reconnect. Session history remains in Android; desktop reconnect replay is limited to its latest 200 messages.
+
+Use the composer's **Send to** chips to select General, Local, Faction or Safehouse. Selecting a supported channel filter also selects the reply destination; All preserves it. Channel commands are added to the clipboard. Automatic sending requires Zomboid in the foreground, chat closed, and the default T binding. Windows and macOS are supported. On macOS, grant Accessibility and Automation access to the process running the desktop client. Set `MEOWLINGO_AUTO_SEND=false` to disable keyboard input. **Keys sent to game** reports keyboard input, not confirmed delivery; if Zomboid is inactive or input fails, paste manually. A clipboard failure is reported explicitly and the reply text remains visible. If disconnected before acknowledgement, delivery is unknown; replies are never resent automatically.
+
+## Current limits and next steps
+
+- Implement real translation behind `Translator`, on desktop only.
+- The parser supports the observed single-line client chat format. Confirm additional game versions and unusual multi-line log formats before extending it.
+- No authentication, database, TLS provisioning, or persistent chat history. Use a trusted local network; Android allows cleartext WebSockets for this MVP.
+- Background notifications require an active user-started connection, network access, notification permission, and Android allowing the foreground service to run. Force-stopping the app ends delivery; no cloud push or boot-time auto-start is provided.
+- Desktop shutdown loses its 200-message replay buffer. Android process termination loses its chat history. No offline reply queue or guaranteed delivery exists.
+- Clipboard confirmation means the desktop copy API completed, not that the game received or sent the text.
+
+Replies use the selected translator before copying to the desktop clipboard; `original` retains user input and `translated` contains the result. In mock mode both fields are equal. Current Android builds always serialize `type: "reply"`; desktop also accepts otherwise valid legacy replies with an omitted type. Validation errors include a valid supplied reply ID so the UI can resolve pending replies.
+
+Before pasting, the desktop selects existing chat input with Ctrl+A because Zomboid can remember the previous channel command ([game chat documentation](https://theindiestone.com/forums/topic/24509-new-chat-system/)). No game acknowledgement is available; test keyboard sending while stationary with chat closed.
+
+macOS keyboard input uses a small Core Graphics helper, compiled and cached under `~/Library/Caches/MeowLingo` on first use. Install Xcode Command Line Tools if compilation is unavailable (`xcode-select --install`). Enable Accessibility for the terminal/client launcher or the exact helper path printed in the console, then restart the client. Each reply logs `Reply delivery` with clipboard status, keyboard status and a diagnostic message. Keyboard events hold each key for 100 ms and check foreground focus between steps.
+
+## OpenAI translation
+
+From `desktop-client`, copy `.env.example` to `.env` if it does not exist. Preserve any existing connection settings, then set:
+
+```dotenv
+TRANSLATOR_PROVIDER=openai
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-6-luna
+```
+
+Run `npm install`, then `npm run dev` (or `npm run build` and `npm start`). Restart after changing `.env`. API keys and the model are read only from `desktop-client/.env`; the key is never sent to Android. `.env` is ignored by Git. Select `TRANSLATOR_PROVIDER=mock` for unchanged text; mock is the default and the fallback when the key is missing.
+
+The [official OpenAI JavaScript SDK](https://developers.openai.com/api/docs/libraries) calls the Responses API with a 15-second timeout per attempt and at most two SDK retries for transient failures. Failed, empty or incomplete translations are logged without credentials and return the original text. Incoming chat is translated to natural Ukrainian; replies to English. Prompts preserve nicknames, URLs, numbers, place names and Project Zomboid terms and request only the translation. Messages are sent to OpenAI only when this provider is enabled; response storage is disabled. Automated tests simulate the API; account/model access must be checked with your own key.
+
+On macOS, game input uses T, Ctrl+A, direct Unicode text events, Enter. This bypasses Project Zomboid's cached clipboard, which can paste an older message even when the system clipboard is correct. The desktop still copies the channel-prefixed reply for manual pasting. Validate this input method in your game; keyboard events are not a delivery acknowledgement.
+
+Android channel appearance is configured in `android-app/app/src/main/java/com/catemup/meowlingo/config/AppSettings.kt`. Each channel has a light and dark ARGB color shared by filter buttons, reply destination buttons and message bubbles. Selected buttons have a contrasting border. Unknown channels receive a stable generated color. Rebuild/install Android after editing the configuration. Bubbles show the author and time above the message; the channel is indicated by color.
+
+Android opens HTTP(S), www and discord.gg links from message text. The composer defaults to `/say`; tap Send for the current channel or hold it, slide over a channel and release to send. Drag outside the menu to cancel. Available destinations are `/all`, `/say`, `/yell`, `/faction`, `/safehouse` and `/whisper`. Whisper asks for a recipient nickname before sending and remembers it for the session. Install the updated desktop and Android together because replies now support an optional `recipient` field.
+
+Set `MEOWLINGO_HISTORY_COUNT=10` in `desktop-client/.env` to control how many recent messages are loaded from the newest chat log on desktop startup and replayed when Android connects (1–500). Restart the desktop after changing it. The default now loads recent history even with `MEOWLINGO_READ_HISTORY=false`; that flag enables reading the entire file instead. History comes from the currently selected log, then live tailing continues without duplicating imported messages.
