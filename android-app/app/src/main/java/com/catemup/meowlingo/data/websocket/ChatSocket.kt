@@ -38,6 +38,8 @@ class ChatSocket {
             }
         })
     }
+    fun explain(id: String): Boolean = socket?.send(
+        org.json.JSONObject().put("type", "explain").put("id", id).toString()) ?: false
     fun send(reply: Reply): Boolean = socket?.send(encodeReply(reply)) ?: false
     fun disconnect() { generation++; socket?.cancel(); socket = null }
     fun release() { disconnect(); client.dispatcher.executorService.shutdown(); client.connectionPool.evictAll() }

@@ -11,6 +11,12 @@ import org.junit.Test
 
 class ProtocolTest {
     private val chat = """{"type":"chat","id":"23dfc96c-984a-4358-9fa7-12fd71ace12a","timestamp":"2026-10-03T12:00:00.000Z","author":"Player","channel":"Safehouse","original":"Hello","translated":"Hello","replayed":true}"""
+    @Test fun decodesExplanationAndFailure() {
+        val id = "23dfc96c-984a-4358-9fa7-12fd71ace12a"
+        assertEquals("Meaning", decodeServerMessage("""{"type":"explanation","id":"$id","explanation":"Meaning"}""").explanation)
+        assertEquals("Unavailable", decodeServerMessage("""{"type":"explanation","id":"$id","error":"Unavailable"}""").error)
+        assertTrue(runCatching { decodeServerMessage("""{"type":"explanation","id":"$id"}""") }.isFailure)
+    }
     @Test fun decodesChannelsAndReplay() {
         val message = decodeServerMessage(chat)
         assertEquals("Safehouse", message.channel)

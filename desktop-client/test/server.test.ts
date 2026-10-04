@@ -165,3 +165,36 @@ test('opening a client replays only the latest ten chats in order', async t => {
   client.socket.send(JSON.stringify({type:'ping'})); await waitFor(client.messages, 'pong');
   assert(!client.messages.some(message => message.type === 'chat'));
 });
+
+test('explanations use original preceding messages, deduplicate requests and recover from failures', async t => {
+  let calls = 0;
+  const app = createServer('127.0.0.1', 0, {
+    translateToUkrainian: async () => 'translated text',
+    translateToEnglish: async text => text,
+  }, async () => {}, undefined, 10, async (message, previous) => {
+    calls++;
+    assert.equal(message.original, 'brb at Muldraugh');
+    assert.deepEqual(previous.map(chat => chat.original), ['before 2', 'before 3', 'before 4', 'before 5', 'before 6']);
+    if (calls === 1) throw new Error('Unavailable');
+    await new Promise(resolve => setTimeout(resolve, 30));
+    return 'brb — скоро повернуся.';
+  });
+  t.after(() => app.close()); await once(app.server, 'listening');
+  for (let i = 0; i < 7; i++) await app.broadcastChat({author:'Player', text:`before ${i}`});
+  await app.broadcastChat({author:'Player', text:'brb at Muldraugh'});
+  const address = app.server.address(); assert(address && typeof address !== 'string');
+  const client = await connect(address.port);
+  let target: any;
+  for (let i = 0; i < 8; i++) target = await waitFor(client.messages, 'chat');
+  const request = JSON.stringify({type:'explain', id:target.id});
+  client.socket.send(request);
+  assert.equal((await waitFor(client.messages, 'explanation')).error, 'Unavailable');
+  client.socket.send(request); client.socket.send(request);
+  assert.equal((await waitFor(client.messages, 'explanation')).explanation, 'brb — скоро повернуся.');
+  await waitFor(client.messages, 'explanation');
+  client.socket.send(request); await waitFor(client.messages, 'explanation');
+  assert.equal(calls, 2);
+  client.socket.send(JSON.stringify({type:'explain', id:randomUUID()}));
+  assert.match((await waitFor(client.messages, 'explanation')).error, /no longer available/);
+  client.socket.send(JSON.stringify({type:'ping'})); await waitFor(client.messages, 'pong');
+});

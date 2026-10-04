@@ -116,6 +116,10 @@ export function macInputHelper(): Promise<string> {
   return helperBuild;
 }
 async function buildHelper(): Promise<string> {
+  if (process.env.MEOWLINGO_MAC_HELPER) {
+    await access(process.env.MEOWLINGO_MAC_HELPER);
+    return process.env.MEOWLINGO_MAC_HELPER;
+  }
   const hash = createHash('sha256').update(macGameInputSource).digest('hex').slice(0, 16);
   const directory = join(homedir(), 'Library', 'Caches', 'MeowLingo', `keyboard-${hash}`);
   const helper = join(directory, 'meowlingo-game-input');

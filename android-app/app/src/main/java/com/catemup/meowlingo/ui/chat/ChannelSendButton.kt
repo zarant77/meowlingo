@@ -24,6 +24,7 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.catemup.meowlingo.config.channelForeground
 import com.catemup.meowlingo.config.channelBackground
 import com.catemup.meowlingo.data.channelCommand
 import com.catemup.meowlingo.data.replyChannels
@@ -43,11 +44,25 @@ fun ChannelSendButton(channel: String, enabled: Boolean, onSelect: (String) -> U
     val selectLatest by rememberUpdatedState(onSelect)
     val sendLatest by rememberUpdatedState(onSend)
     val channelLatest by rememberUpdatedState(channel)
+    val canSendLatest by rememberUpdatedState(enabled)
     fun submit(selected: String) {
         selectLatest(selected)
+        if (!canSendLatest) return
         if (selected == "Whisper") whisperDialog = true else sendLatest(null)
     }
-    Box(Modifier.size(56.dp)) {
+    Box(Modifier.size(56.dp).onGloballyPositioned { buttonPosition = it.positionInWindow() }.pointerInput(Unit) {
+        detectDragGesturesAfterLongPress(
+            onDragStart = { menu = true; hovered = channelLatest },
+            onDrag = { change, _ ->
+                change.consume()
+                val index = ((change.position.y + rowPixels * replyChannels.size) / rowPixels).toInt()
+                hovered = if (change.position.y < 0 && change.position.x >= (-124).dp.toPx() && change.position.x < 56.dp.toPx()) replyChannels.getOrNull(index) else null
+            },
+            onDragEnd = { val target = hovered; menu = false; hovered = null; if (target != null) submit(target) },
+            onDragCancel = { menu = false; hovered = null },
+        )
+
+    }) {
         if (menu) Popup(
             popupPositionProvider = object : PopupPositionProvider {
                 override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset =
@@ -60,32 +75,22 @@ fun ChannelSendButton(channel: String, enabled: Boolean, onSelect: (String) -> U
                 shape = RoundedCornerShape(12.dp), shadowElevation = 12.dp) {
                 Column {
                     replyChannels.forEach { target ->
+                        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides channelForeground(target)) {
                         Box(Modifier.fillMaxWidth().height(44.dp).background(channelBackground(target)), contentAlignment = Alignment.CenterStart) {
                             Text((if (hovered == target) "→ " else "   ") + channelCommand(target), modifier = Modifier.padding(horizontal = 12.dp))
+                        }
                         }
                     }
                 }
             }
         }
         FilledIconButton(onClick = { submit(channelLatest) }, enabled = enabled,
-            modifier = Modifier.size(56.dp).onGloballyPositioned { buttonPosition = it.positionInWindow() }.pointerInput(enabled) {
-                if (!enabled) return@pointerInput
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { menu = true; hovered = channelLatest },
-                    onDrag = { change, _ ->
-                        change.consume()
-                        val index = ((change.position.y + rowPixels * replyChannels.size) / rowPixels).toInt()
-                        hovered = if (change.position.y < 0 && change.position.x >= (-124).dp.toPx() && change.position.x < 56.dp.toPx()) replyChannels.getOrNull(index) else null
-                    },
-                    onDragEnd = { val target = hovered; menu = false; hovered = null; if (target != null) submit(target) },
-                    onDragCancel = { menu = false; hovered = null },
-                )
-            }) { Icon(Icons.AutoMirrored.Filled.Send, "Send; hold and slide to choose a channel") }
+            modifier = Modifier.size(56.dp)) { Icon(Icons.AutoMirrored.Filled.Send, "Send; hold and slide to choose a channel") }
     }
     if (whisperDialog) AlertDialog(onDismissRequest = { whisperDialog = false }, title = { Text("Private message") },
         text = { OutlinedTextField(recipient, { recipient = it }, label = { Text("Recipient nickname") }, singleLine = true) },
         confirmButton = { TextButton(enabled = recipient.isNotBlank() && recipient.none { it == '"' || it == '\n' || it == '\r' },
-            onClick = { whisperDialog = false; onRecipient(recipient.trim()); sendLatest(recipient.trim()) }) { Text("Send whisper") } },
+            onClick = { whisperDialog = false; onRecipient(recipient.trim()); if (canSendLatest) sendLatest(recipient.trim()) }) { Text("Send whisper") } },
         dismissButton = { TextButton(onClick = { whisperDialog = false }) { Text("Cancel") } })
 }
 

@@ -14,9 +14,12 @@ import com.catemup.meowlingo.domain.DesktopEndpoint
 @Composable
 fun ConnectionPanel(state: ChatState, onAddress: (String) -> Unit, onConnect: () -> Unit,
     onDisconnect: () -> Unit, onEnableNotifications: () -> Unit, onFindDesktop: () -> Unit,
+    onChannelColor: (String, String) -> Unit,
     onAutoConnect: (Boolean) -> Unit, onSelectDesktop: (DesktopEndpoint) -> Unit) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        ChannelColorSettings(state.channelColors, onChannelColor)
+        HorizontalDivider()
         Text("Desktop connection", style = MaterialTheme.typography.headlineSmall)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {

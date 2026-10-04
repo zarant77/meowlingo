@@ -10,6 +10,15 @@ import kotlinx.coroutines.flow.first
 
 private val Context.settings by preferencesDataStore(name = "connection")
 class AddressStore(private val context: Context) {
+    private val colors = stringSetPreferencesKey("channel_colors")
+    suspend fun readChannelColors(): Map<String, String> =
+        (context.settings.data.first()[colors] ?: emptySet()).mapNotNull {
+            val parts = it.split("=", limit = 2)
+            if (parts.size == 2 && com.catemup.meowlingo.config.isChannelColor(parts[1])) parts[0] to parts[1] else null
+        }.toMap()
+    suspend fun saveChannelColors(values: Map<String, String>) {
+        context.settings.edit { it[colors] = values.map { (channel, color) -> "$channel=$color" }.toSet() }
+    }
     private val whisperRecipient = stringPreferencesKey("whisper_recipient")
     suspend fun readWhisperRecipient(): String = context.settings.data.first()[whisperRecipient] ?: ""
     suspend fun saveWhisperRecipient(recipient: String) { context.settings.edit { it[whisperRecipient] = recipient } }

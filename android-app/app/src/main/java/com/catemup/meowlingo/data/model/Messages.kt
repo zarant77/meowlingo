@@ -8,6 +8,8 @@ data class Reply(val id: String, val text: String, val type: String = "reply", v
 
 @Serializable
 data class ServerMessage(
+    val explanation: String? = null,
+    val error: String? = null,
     val type: String,
     val id: String? = null,
     val timestamp: String? = null,
@@ -42,6 +44,7 @@ fun decodeServerMessage(text: String): ServerMessage {
         "reply_ready" -> validId(message.id) && message.original != null && message.translated != null && message.copiedToClipboard != null
         "status" -> message.status in setOf("connected", "source_waiting", "source_watching", "source_error") && message.message != null
         "error" -> message.code != null && message.message != null && (message.id == null || validId(message.id))
+        "explanation" -> validId(message.id) && (!message.explanation.isNullOrBlank() || !message.error.isNullOrBlank())
         "pong" -> true
         else -> false
     }

@@ -222,8 +222,55 @@ The [official OpenAI JavaScript SDK](https://developers.openai.com/api/docs/libr
 
 On macOS, game input uses T, Ctrl+A, direct Unicode text events, Enter. This bypasses Project Zomboid's cached clipboard, which can paste an older message even when the system clipboard is correct. The desktop still copies the channel-prefixed reply for manual pasting. Validate this input method in your game; keyboard events are not a delivery acknowledgement.
 
-Android channel appearance is configured in `android-app/app/src/main/java/com/catemup/meowlingo/config/AppSettings.kt`. Each channel has a light and dark ARGB color shared by filter buttons, reply destination buttons and message bubbles. Selected buttons have a contrasting border. Unknown channels receive a stable generated color. Rebuild/install Android after editing the configuration. Bubbles show the author and time above the message; the channel is indicated by color.
+Android channel colors can be edited under Settings → Channel colors using #RRGGBB values, with Save and Reset controls. Changes persist between launches and apply to filter buttons, send-channel menu rows and message bubbles. Text automatically uses a contrasting color. Defaults in `android-app/app/src/main/java/com/catemup/meowlingo/config/AppSettings.kt` are /say white, /all dark orange, /faction pink, /safehouse dark green, /yell red and /whisper purple. Unknown channels receive a stable generated color. Bubbles show the author and time above the message; the channel is indicated by color.
 
 Android opens HTTP(S), www and discord.gg links from message text. The composer defaults to `/say`; tap Send for the current channel or hold it, slide over a channel and release to send. Drag outside the menu to cancel. Available destinations are `/all`, `/say`, `/yell`, `/faction`, `/safehouse` and `/whisper`. Whisper asks for a recipient nickname before sending and remembers it for the session. Install the updated desktop and Android together because replies now support an optional `recipient` field.
 
 Set `MEOWLINGO_HISTORY_COUNT=10` in `desktop-client/.env` to control how many recent messages are loaded from the newest chat log on desktop startup and replayed when Android connects (1–500). Restart the desktop after changing it. The default now loads recent history even with `MEOWLINGO_READ_HISTORY=false`; that flag enables reading the entire file instead. History comes from the currently selected log, then live tailing continues without duplicating imported messages.
+
+## Installable desktop application
+
+The Electron desktop app reuses the existing TypeScript client. It provides connection status, settings, activity logs and a tray/menu-bar icon. Closing its window keeps the client running; choose **Quit** from the tray menu to stop it. Only one installed app instance runs at a time. Stop a separately running CLI client before opening Electron on the same port.
+
+Development, from `desktop-client`:
+
+```sh
+npm ci
+npm run desktop:dev
+```
+
+Build an installer on the target operating system:
+
+```sh
+npm run desktop:make
+```
+
+macOS produces an `.app`, a ZIP and an installable DMG under `desktop-client/out/`; drag MeowLingo into Applications. Windows produces `MeowLingo-Setup.exe`. Builds include their own Electron/Node runtime. The macOS keyboard helper is compiled during packaging and included as a resource; end users do not need Xcode. App settings and the OpenAI key are saved only in a private user `.env`, accessible with **Show .env file**. The packaged app never includes your development `.env`. The CLI retains its existing commands and `.env` location.
+
+On macOS, grant Accessibility to the installed app or the included `MeowLingo.app/Contents/Resources/meowlingo-game-input` helper when automatic input reports missing permission. Test keyboard input with Zomboid foreground and chat closed.
+
+## GitHub release builds
+
+`.github/workflows/release.yml` runs when a GitHub Release is **published** (including prereleases), and also supports a manual workflow run. It builds and tests Android, macOS arm64/Intel x64, and Windows x64 in separate jobs. A final job attaches the APK, DMGs, desktop ZIPs and Windows installer to the published release. Manual runs retain files as Actions artifacts without publishing a release. Commit these files and push to your GitHub repository before using the workflow.
+
+For a production Android APK, configure these repository Actions secrets:
+
+- `ANDROID_KEYSTORE_BASE64`: base64-encoded existing release keystore.
+- `ANDROID_KEYSTORE_PASSWORD`.
+- `ANDROID_KEY_ALIAS`.
+- `ANDROID_KEY_PASSWORD`.
+
+Without a keystore secret, the workflow emits a clearly named **debug APK** that can be installed for testing. Its generated debug key can change between workflow runs, so updating may require uninstalling the previous build. Use one stable release key for distributable updates; a release-signed APK will not upgrade an existing debug-signed installation. Keep the keystore outside the repository. Increment the Android `versionCode`/`versionName` and desktop package version before each release.
+
+Desktop installers are currently unsigned and macOS builds are not notarized. They are suitable for initial testing but operating systems may warn or block them. Production signing requires your Apple Developer/Windows signing credentials and a separate signing setup. Do not add the OpenAI API key to Actions: each user supplies their own key after installation.
+
+
+### Explain context
+
+Tap `?` on an incoming Android message to explain unclear slang, abbreviations, idioms, locations and Project Zomboid/server terms in Ukrainian. The desktop sends the original text and up to five preceding incoming chat messages through the OpenAI Responses API. Instructions exclude repeated translations and obvious words, and require uncertain meanings to be identified as probable.
+
+Use `OPENAI_API_KEY` and `OPENAI_MODEL` in the desktop `.env`. Explanation works independently of `TRANSLATOR_PROVIDER`, so mock translation can still use real OpenAI explanations. Missing credentials and API failures appear below the message with a retry option.
+
+Explanations can be collapsed and reopened without another API request. Android retains results while the message is in its current session, and desktop caches results and deduplicates concurrent requests while messages remain in its history (at least 200 messages). Cache is in memory; restarting the desktop clears it. An expired message reports that it is unavailable. Restart the updated desktop and install the updated Android APK together.
+
+Context explanation instructions live in `desktop-client/config/context-explanation.json` under `instructions`. Edit this file to adjust the prompt; CLI reads it for each new explanation request. Cached explanations remain unchanged. The config is included in desktop packages.

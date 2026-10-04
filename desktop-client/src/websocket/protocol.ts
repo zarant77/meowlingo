@@ -8,12 +8,13 @@ export const clientMessageSchema = z.preprocess(value => {
     return { ...value, type: 'reply' };
   }
   return value;
-}, z.discriminatedUnion('type', [replySchema, z.object({ type: z.literal('ping') }).strict()]));
+}, z.discriminatedUnion('type', [z.object({ type: z.literal('explain'), id: z.string().uuid() }).strict(), replySchema, z.object({ type: z.literal('ping') }).strict()]));
 export const messageIdSchema = z.object({ id: z.string().uuid() });
 export type ServerMessage =
   | { type: 'chat'; id: string; timestamp: string; author: string; channel: string; original: string; translated: string; replayed?: boolean }
   | (GameSendResult & { type: 'reply_ready'; id: string; original: string; translated: string; copiedToClipboard: boolean })
   | { type: 'status'; status: 'connected'; historyLimit?: number; message: string }
   | ({ type: 'status' } & SourceStatus)
+  | { type: 'explanation'; id: string; explanation?: string; error?: string }
   | { type: 'pong' }
   | { type: 'error'; code: string; message: string; id?: string };

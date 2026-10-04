@@ -7,3 +7,8 @@ local.properties
 .idea/
 *.iml
 .DS_Store
+
+desktop-client/out/
+desktop-client/native/
+*.jks
+*.keystore

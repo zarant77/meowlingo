@@ -1,5 +1,6 @@
 package com.catemup.meowlingo.ui.chat
 
+import com.catemup.meowlingo.config.LocalChannelColors
 import com.catemup.meowlingo.config.channelBackground
 import com.catemup.meowlingo.config.channelForeground
 import androidx.compose.foundation.BorderStroke
@@ -65,6 +66,7 @@ fun ChatScreen(model: ChatViewModel, onEnableNotifications: () -> Unit, onReques
     }
     LaunchedEffect(state.hiddenChannels, state.search) { list.scrollToItem(0); model.atBottom(true) }
     val unread = visible.count { it.unread }
+    CompositionLocalProvider(LocalChannelColors provides state.channelColors) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).imePadding()) {
             Surface(color = MaterialTheme.colorScheme.surface) {
@@ -122,7 +124,7 @@ fun ChatScreen(model: ChatViewModel, onEnableNotifications: () -> Unit, onReques
                     }
                 }
                 LazyColumn(Modifier.fillMaxSize(), state = list, reverseLayout = true, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    items(visible.asReversed(), key = { it.id }) { entry -> MessageBubble(entry, onWhisper = { model.selectWhisperRecipient(entry.author) }) }
+                    items(visible.asReversed(), key = { it.id }) { entry -> MessageBubble(entry, onExplain = { model.explain(entry.id) }, onWhisper = { model.selectWhisperRecipient(entry.author) }) }
                 }
                 if (!atBottom && visible.isNotEmpty()) FilledTonalButton(onClick = { scope.launch { list.animateScrollToItem(0); model.atBottom(true) } },
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) {
@@ -148,15 +150,17 @@ fun ChatScreen(model: ChatViewModel, onEnableNotifications: () -> Unit, onReques
         ConnectionPanel(state, model::address,
             onConnect = { if (model.connect()) { settings = false; onRequestNotifications() } },
             onDisconnect = model::disconnect, onEnableNotifications = onEnableNotifications,
+            onChannelColor = model::setChannelColor,
             onFindDesktop = model::findDesktop, onAutoConnect = model::setAutoConnect,
             onSelectDesktop = { if (model.connectToDesktop(it)) { settings = false; onRequestNotifications() } })
+    }
     }
 }
 
 @Composable
 private fun ChannelChip(name: String, selected: Boolean, unread: Int, onClick: () -> Unit) {
     val background = channelBackground(name)
-    val foreground = channelForeground()
+    val foreground = channelForeground(name)
     val borderWidth = with(LocalDensity.current) { 1f.toDp() }
     Surface(color = if (selected) background else MaterialTheme.colorScheme.surface,
         contentColor = if (selected) foreground else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -172,7 +176,8 @@ private fun ChannelChip(name: String, selected: Boolean, unread: Int, onClick: (
 }
 
 @Composable
-private fun MessageBubble(entry: ChatEntry, onWhisper: () -> Unit) {
+private fun MessageBubble(entry: ChatEntry, onExplain: () -> Unit, onWhisper: () -> Unit) {
+    var showExplanation by rememberSaveable(entry.id) { mutableStateOf(false) }
     var showOriginal by rememberSaveable(entry.id) { mutableStateOf(false) }
     val time = remember(entry.timestamp) { runCatching {
         DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(entry.timestamp))
@@ -182,23 +187,56 @@ private fun MessageBubble(entry: ChatEntry, onWhisper: () -> Unit) {
         Surface(modifier = Modifier.widthIn(max = 320.dp).weight(1f, fill = false).combinedClickable(
             enabled = !entry.outgoing, onClick = {}, onLongClick = onWhisper, onLongClickLabel = "Whisper to ${entry.author}"),
             shape = RoundedCornerShape(10.dp),
-            color = channelBackground(entry.channel), contentColor = channelForeground(),
+            color = channelBackground(entry.channel), contentColor = channelForeground(entry.channel),
             tonalElevation = 0.dp) {
             Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (entry.outgoing) "You" else entry.author, style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Text(time, style = MaterialTheme.typography.labelSmall, color = channelForeground().copy(alpha = 0.7f))
+                    Text(time, style = MaterialTheme.typography.labelSmall, color = channelForeground(entry.channel).copy(alpha = 0.7f))
                 }
                 LinkedMessageText(if (showOriginal) entry.original else entry.translated ?: entry.original)
-                if (different) {
-                    Text(if (showOriginal) "Show translate" else "Show original", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { showOriginal = !showOriginal })
+                if (!entry.outgoing && showExplanation) {
+                    HorizontalDivider(modifier = Modifier.padding(top = 6.dp),
+                        color = channelForeground(entry.channel).copy(alpha = 0.25f))
+                    Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        when {
+                            entry.explanationLoading -> Text("Explaining context…", style = MaterialTheme.typography.bodySmall)
+                            entry.explanation != null -> Text(entry.explanation, style = MaterialTheme.typography.bodySmall)
+                            entry.explanationError != null -> {
+                                Text(entry.explanationError, style = MaterialTheme.typography.bodySmall)
+                                Text("Retry", modifier = Modifier.clickable { onExplain() }.padding(vertical = 4.dp))
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = channelForeground(entry.channel).copy(alpha = 0.25f))
                 }
-                if (entry.outgoing) Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    if (entry.outgoing) {
-                        if (entry.delivery == "Copied to PC") Icon(Icons.Default.Check, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.secondary)
-                        Text(entry.delivery, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (different || !entry.outgoing || entry.delivery.isNotBlank()) {
+                    Row(Modifier.fillMaxWidth().padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (different) {
+                            Text(if (showOriginal) "Show translate" else "Show original",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = channelForeground(entry.channel).copy(alpha = 0.8f),
+                                modifier = Modifier.clickable { showOriginal = !showOriginal }.padding(vertical = 6.dp))
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (!entry.outgoing) {
+                            Text("?", style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.sizeIn(minWidth = 32.dp, minHeight = 32.dp)
+                                    .clickable { showExplanation = !showExplanation; if (showExplanation) onExplain() }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp))
+                        }
+                    }
+                    if (entry.outgoing && entry.delivery.isNotBlank()) {
+                        Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            if (entry.delivery == "Copied to PC") Icon(Icons.Default.Check, null,
+                                Modifier.size(14.dp), tint = channelForeground(entry.channel))
+                            Text(entry.delivery, style = MaterialTheme.typography.labelSmall,
+                                color = channelForeground(entry.channel).copy(alpha = 0.7f))
+                        }
                     }
                 }
             }

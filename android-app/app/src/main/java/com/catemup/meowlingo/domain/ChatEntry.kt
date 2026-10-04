@@ -11,5 +11,8 @@ data class ChatEntry(
     val delivery: String = "",
     val channel: String = "General",
     val timestamp: String = Instant.now().toString(),
+    val explanation: String? = null,
+    val explanationLoading: Boolean = false,
+    val explanationError: String? = null,
     val unread: Boolean = false,
 )

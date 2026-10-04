@@ -1,3 +1,4 @@
+import type { ContextExplainer } from '../translation/contextExplainer.js';
 import { channelCommand, type GameSender, type GameSendResult } from '../zomboid/gameSender.js';
 import { randomUUID } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -5,7 +6,8 @@ import type { Translator } from '../translation/translator.js';
 import type { CopyText } from '../clipboard/clipboard.js';
 import type { IncomingChatMessage, SourceStatus } from '../types/index.js';
 import { clientMessageSchema, messageIdSchema, type ServerMessage } from './protocol.js';
-export function createServer(host: string, port: number, translator: Translator, copy: CopyText, gameSender?: GameSender, historyLimit = 10) {
+export function createServer(host: string, port: number, translator: Translator, copy: CopyText, gameSender?: GameSender, historyLimit = 10, explain?: ContextExplainer) {
+  const explanations = new Map<string, Promise<string>>();
   const history: Extract<ServerMessage, { type: 'chat' }>[] = [];
   let sourceStatus: SourceStatus | undefined;
   let chatQueue = Promise.resolve();
@@ -31,10 +33,28 @@ export function createServer(host: string, port: number, translator: Translator,
         message = clientMessageSchema.parse(parsed);
       } catch {
         const id = messageIdSchema.safeParse(parsed);
-        send(socket, { type: 'error', code: 'invalid_message', message: 'Expected a valid reply or ping JSON message.', ...(id.success ? { id: id.data.id } : {}) });
+        send(socket, { type: 'error', code: 'invalid_message', message: 'Expected a valid reply, explain or ping JSON message.', ...(id.success ? { id: id.data.id } : {}) });
         return;
       }
       if (message.type === 'ping') { send(socket, { type: 'pong' }); return; }
+      if (message.type === 'explain') {
+        const index = history.findIndex(chat => chat.id === message.id);
+        if (index < 0 || !explain) {
+          send(socket, { type: 'explanation', id: message.id, error: index < 0 ? 'This message is no longer available on the desktop.' : 'Context explanation is unavailable.' });
+          return;
+        }
+        let pending = explanations.get(message.id);
+        if (!pending) {
+          const previous = history.slice(Math.max(0, index - 5), index);
+          const target = history[index];
+          pending = Promise.resolve().then(() => explain(target, previous));
+          explanations.set(message.id, pending);
+          void pending.catch(() => { explanations.delete(message.id); });
+        }
+        void pending.then(explanation => send(socket, { type: 'explanation', id: message.id, explanation }),
+          error => send(socket, { type: 'explanation', id: message.id, error: error instanceof Error ? error.message : 'Context explanation failed.' }));
+        return;
+      }
       const reply = message;
       console.log(`[${new Date().toISOString()}] Reply received from Android: ${JSON.stringify({ id: reply.id, channel: reply.channel ?? 'General', text: reply.text })}`);
       replyQueue = replyQueue.then(async () => {
@@ -79,7 +99,7 @@ export function createServer(host: string, port: number, translator: Translator,
           author: message.author, channel: message.channel ?? 'General', original: message.text,
           translated: await translator.translateToUkrainian(message.text) };
         history.push(chat);
-        if (history.length > Math.max(200, historyLimit)) history.shift();
+        if (history.length > Math.max(200, historyLimit)) { const removed = history.shift(); if (removed) explanations.delete(removed.id); }
         for (const socket of server.clients) send(socket, chat);
       });
       chatQueue = job.catch(() => {});

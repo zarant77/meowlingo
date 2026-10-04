@@ -32,6 +32,7 @@ data class ChatState(
     val whisperRecipient: String = "",
     val replyChannel: String = "Local",
     val search: String = "",
+    val channelColors: Map<String, String> = emptyMap(),
     val hiddenChannels: Set<String> = emptySet(),
     val error: String? = null,
 )
@@ -56,7 +57,24 @@ class ChatSession private constructor(context: Context) {
     private var entriesAtBottom = true
     private var saveJob: Job? = null
     private var editedWhisperRecipient = false
+    private var editedColors = false
+    private var colorSaveJob: Job? = null
+    fun setChannelColor(channel: String, color: String) {
+        if (color.isNotEmpty() && !com.catemup.meowlingo.config.isChannelColor(color)) return
+        editedColors = true
+        mutable.update { it.copy(channelColors = if (color.isEmpty()) it.channelColors - channel else it.channelColors + (channel to color.uppercase())) }
+        val colors = state.value.channelColors
+        colorSaveJob?.cancel()
+        colorSaveJob = scope.launch {
+            try { store.saveChannelColors(colors) }
+            catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not save channel colors") }
+        }
+    }
     init {
+        scope.launch {
+            try { val colors = store.readChannelColors(); if (!editedColors) mutable.update { it.copy(channelColors = colors) } }
+            catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not load channel colors") }
+        }
         scope.launch {
             try { val saved = store.readWhisperRecipient(); if (!editedWhisperRecipient) mutable.update { it.copy(whisperRecipient = saved) } }
             catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not load whisper recipient") }
@@ -123,6 +141,9 @@ class ChatSession private constructor(context: Context) {
                 if (token != generation) return@launch
                 mutable.update { it.copy(status = status) }
                 if (status == "Connected") retrySeconds = 2
+                if (status == "Disconnected") mutable.update { current -> current.copy(entries = current.entries.map {
+                    if (it.explanationLoading) it.copy(explanationLoading = false, explanationError = "Disconnected. Please try again.") else it
+                }) }
                 if (status == "Disconnected" && desiredAddress != null) {
                     markPendingUnknown()
                     mutable.update { it.copy(status = "Reconnecting", sourceState = "source_waiting", sourceStatus = "Waiting for desktop") }
@@ -146,7 +167,7 @@ class ChatSession private constructor(context: Context) {
     fun disconnect() {
         generation++; desiredAddress = null; reconnect?.cancel(); socket.disconnect()
         markPendingUnknown()
-        mutable.update { it.copy(status = "Disconnected", connectionAddress = null, connectedDesktopId = null, sourceState = "source_waiting", sourceStatus = "Waiting for desktop") }
+        mutable.update { it.copy(entries = it.entries.map { entry -> if (entry.explanationLoading) entry.copy(explanationLoading = false, explanationError = "Disconnected. Please try again.") else entry }, status = "Disconnected", connectionAddress = null, connectedDesktopId = null, sourceState = "source_waiting", sourceStatus = "Waiting for desktop") }
     }
     fun selectWhisperRecipient(recipient: String) {
         val name = recipient.trim()
@@ -196,8 +217,19 @@ class ChatSession private constructor(context: Context) {
         }
         return true
     }
+    fun explain(id: String) {
+        val entry = state.value.entries.find { it.id == id } ?: return
+        if (entry.outgoing || entry.explanation != null || entry.explanationLoading) return
+        val sent = state.value.status == "Connected" && socket.explain(id)
+        mutable.update { current -> current.copy(entries = current.entries.map {
+            if (it.id == id) it.copy(explanationLoading = sent, explanationError = if (sent) null else "Connect to the desktop to explain context.") else it
+        }) }
+    }
     private fun receive(message: ServerMessage) {
         when (message.type) {
+            "explanation" -> mutable.update { current -> current.copy(entries = current.entries.map {
+                if (it.id == message.id) it.copy(explanation = message.explanation, explanationLoading = false, explanationError = message.error) else it
+            }) }
             "chat" -> {
                 if (state.value.entries.any { it.id == message.id }) return
                 val entry = ChatEntry(message.id!!, message.author!!, message.original!!, message.translated,
