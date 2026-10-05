@@ -33,21 +33,33 @@ Start-Sleep -Milliseconds 300
 if ([GameWindow]::GetForegroundWindow() -ne $window) { throw 'Focus changed before paste.' }
 [System.Windows.Forms.SendKeys]::SendWait('^a')
 CheckClipboard
+if ($env:MEOWLINGO_INPUT_MODE -eq 'paste') {
 [System.Windows.Forms.SendKeys]::SendWait('^v')
+} else {
+$escapedKeys = @{ '+'='{+}'; '^'='{^}'; '%'='{%}'; '~'='{~}'; '('='{(}'; ')'='{)}'; '['='{[}'; ']'='{]}'; '{'='{{}'; '}'='{}}' }
+foreach ($character in $env:MEOWLINGO_EXPECTED_CLIPBOARD.ToCharArray()) {
+if ([GameWindow]::GetForegroundWindow() -ne $window) { throw 'Focus changed during typing.' }
+CheckClipboard
+$text = [string]$character
+if ($escapedKeys.ContainsKey($text)) { $text = $escapedKeys[$text] }
+[System.Windows.Forms.SendKeys]::SendWait($text)
+Start-Sleep -Milliseconds 15
+}
+}
 Start-Sleep -Milliseconds 200
 if ([GameWindow]::GetForegroundWindow() -ne $window) { throw 'Focus changed before Enter.' }
 CheckClipboard
 [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-@{gameSendStatus='keys_sent'; gameSendMessage='T, Ctrl+A, Ctrl+V, Enter issued.'} | ConvertTo-Json -Compress`;
+@{gameSendStatus='keys_sent'; gameSendMessage="T, Ctrl+A, $env:MEOWLINGO_INPUT_MODE, Enter issued."} | ConvertTo-Json -Compress`;
 
-export function nativeGameSender(enabled: boolean): GameSender {
+export function nativeGameSender(enabled: boolean, inputMode: 'typing' | 'paste' = 'typing'): GameSender {
   return async (clipboardText) => {
     if (!enabled) return { gameSendStatus: 'disabled', gameSendMessage: 'MEOWLINGO_AUTO_SEND=false' };
     try {
       const result = process.platform === 'darwin'
-        ? await execute(await macInputHelper(), [clipboardText], { timeout: 120000 })
+        ? await execute(await macInputHelper(), [clipboardText, inputMode], { timeout: 120000 })
         : process.platform === 'win32'
-          ? await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command', powerShell], { timeout: 15000, env: { ...process.env, MEOWLINGO_EXPECTED_CLIPBOARD: clipboardText } })
+          ? await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command', powerShell], { timeout: inputMode === 'typing' ? 120000 : 15000, env: { ...process.env, MEOWLINGO_EXPECTED_CLIPBOARD: clipboardText, MEOWLINGO_INPUT_MODE: inputMode } })
           : undefined;
       if (!result) return { gameSendStatus: 'disabled', gameSendMessage: `Automatic input is unavailable on ${process.platform}.` };
       if (process.platform === 'win32' || process.platform === 'darwin') {

@@ -22,6 +22,7 @@ test('uses Responses API for both directions and preserves original on empty or 
     fetch: async () => new Response(JSON.stringify({error:{message:'Unavailable',type:'invalid_request_error'}}), {status:401,headers:{'Content-Type':'application/json'}}),
   });
   assert.equal(await unavailable.translateToEnglish('оригінал'), 'оригінал');
+  await assert.rejects(unavailable.translateToUkrainianForCache('original'), /cache entry skipped/);
   const empty = new OpenAITranslator('test-placeholder', 'gpt-6-luna', {
     fetch: async () => new Response(JSON.stringify({object:'response',status:'incomplete',output:[]}), {status:200,headers:{'Content-Type':'application/json'}}),
   });

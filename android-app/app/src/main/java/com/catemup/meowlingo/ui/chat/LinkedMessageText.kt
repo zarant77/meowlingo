@@ -1,5 +1,6 @@
 package com.catemup.meowlingo.ui.chat
 
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -11,7 +12,7 @@ import androidx.compose.ui.text.style.TextDecoration
 
 @Composable
 fun LinkedMessageText(text: String) {
-    val linkColor = MaterialTheme.colorScheme.primary
+    val linkColor = LocalContentColor.current
     val annotated = buildAnnotatedString {
         append(text)
         Regex("(?:https?://|www\\.|discord\\.gg/)[^\\s<>]+", RegexOption.IGNORE_CASE).findAll(text).forEach { match ->

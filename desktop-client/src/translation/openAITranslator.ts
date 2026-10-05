@@ -7,8 +7,9 @@ export class OpenAITranslator implements Translator {
     this.client = new OpenAI({ apiKey, timeout: 15000, maxRetries: 2, ...options });
   }
   translateToUkrainian(text: string): Promise<string> { return this.translate(text, 'Ukrainian'); }
+  translateToUkrainianForCache(text: string): Promise<string> { return this.translate(text, 'Ukrainian', true); }
   translateToEnglish(text: string): Promise<string> { return this.translate(text, 'English'); }
-  private async translate(text: string, language: string): Promise<string> {
+  private async translate(text: string, language: string, strict = false): Promise<string> {
     if (!text.trim()) return text;
     try {
       const response = await this.client.responses.create({
@@ -22,9 +23,10 @@ export class OpenAITranslator implements Translator {
       return translated;
     } catch (error) {
       // Do not log SDK error objects: they may contain request details or credentials.
-      console.error(`OpenAI translation failed (${language}); returning original text.`,
+      console.error(`OpenAI translation failed (${language}); ${strict ? 'cache entry skipped' : 'returning original text'}.`,
         error instanceof OpenAI.APIError ? { name: error.name, status: error.status, code: error.code } :
           { name: error instanceof Error ? error.name : 'UnknownError' });
+      if (strict) throw new Error('Translation unavailable; cache entry skipped.');
       return text;
     }
   }

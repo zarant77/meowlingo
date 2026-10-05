@@ -7,6 +7,11 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.catemup.meowlingo.ui.theme.LocalDarkTheme
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -22,7 +27,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         intent.getStringExtra("channel")?.let { ChatSession.get(this).selectChannel(it) }
-        setContent { MeowLingoTheme { ChatScreen(model, onEnableNotifications = ::enableNotifications, onRequestNotifications = ::requestNotifications) } }
+        setContent {
+            val state by model.state.collectAsStateWithLifecycle()
+            MeowLingoTheme(state.theme) {
+                val dark = LocalDarkTheme.current
+                SideEffect {
+                    val style = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                        else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+                    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                }
+                ChatScreen(model, onEnableNotifications = ::enableNotifications, onRequestNotifications = ::requestNotifications)
+            }
+        }
     }
     private fun requestNotifications() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {

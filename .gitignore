@@ -12,3 +12,8 @@ desktop-client/out/
 desktop-client/native/
 *.jks
 *.keystore
+
+config.json
+config.json.tmp
+
+translation-cache.sqlite*

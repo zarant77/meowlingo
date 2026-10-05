@@ -198,3 +198,33 @@ test('explanations use original preceding messages, deduplicate requests and rec
   assert.match((await waitFor(client.messages, 'explanation')).error, /no longer available/);
   client.socket.send(JSON.stringify({type:'ping'})); await waitFor(client.messages, 'pong');
 });
+
+test('replays originals immediately and later updates the same messages while translation is delayed', async t => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let active = 0, maximum = 0;
+  const app = createServer('127.0.0.1', 0, {
+    translateToUkrainian: async text => {
+      active++; maximum = Math.max(maximum, active); await gate; active--; return 'UA: ' + text;
+    },
+    translateToEnglish: async text => text,
+  }, async () => {});
+  t.after(async () => { release(); await app.close(); });
+  await once(app.server, 'listening');
+  const jobs = Array.from({length:10}, (_, i) => app.broadcastChat({author:'Player', text:`Old ${i}`, replayed:true}));
+  const address = app.server.address(); assert(address && typeof address !== 'string');
+  const client = await connect(address.port);
+  const history = [];
+  for (let i = 0; i < 10; i++) history.push(await waitFor(client.messages, 'chat'));
+  assert.deepEqual(history.map(chat => chat.original), Array.from({length:10}, (_, i) => `Old ${i}`));
+  assert(history.every(chat => chat.translated === chat.original && chat.replayed));
+  jobs.push(app.broadcastChat({author:'Player', text:'Live'}));
+  const live = await waitFor(client.messages, 'chat');
+  assert.equal(live.original, 'Live');
+  release(); await Promise.all(jobs);
+  const updates = [];
+  for (let i = 0; i < 11; i++) updates.push(await waitFor(client.messages, 'chat'));
+  assert.deepEqual(updates.map(chat => chat.id), [...history, live].map(chat => chat.id));
+  assert(updates.every(chat => chat.translated === 'UA: ' + chat.original));
+  assert(maximum <= 3);
+});

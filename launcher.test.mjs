@@ -16,6 +16,7 @@ async function fixture(t, overrides = {}) {
   await mkdir(join(directory, 'desktop-client'));
   await mkdir(join(directory, 'android-app'));
   const sdk = join(directory, 'sdk'); await mkdir(join(sdk, 'platform-tools'), { recursive: true });
+  await copyFile(join(root, 'desktop-client', 'config.example.json'), join(directory, 'desktop-client', 'config.example.json'));
   await copyFile(join(root, 'launch.mjs'), join(directory, 'launch.mjs'));
   await symlink(join(root, 'desktop-client', 'node_modules'), join(directory, 'desktop-client', 'node_modules'));
   await writeFile(join(directory, 'desktop-client', '.env'), 'MEOWLINGO_PORT="9100"\nMEOWLINGO_HOST=0.0.0.0\n');

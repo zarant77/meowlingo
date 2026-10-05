@@ -1,4 +1,5 @@
 export interface IncomingChatMessage {
+  replayed?: boolean;
   author: string;
   text: string;
   channel?: string;

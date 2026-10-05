@@ -113,7 +113,7 @@ export class ProjectZomboidLogSource implements ChatSource {
       const message = parseLogLine(carry.toString('utf8').replace(/\r$/, ''));
       if (message) recent.push(message);
     }
-    for (const message of recent.reverse()) this.onMessage?.(message);
+    for (const message of recent.reverse()) this.onMessage?.({ ...message, replayed: true });
     console.log(`Loaded ${recent.length} recent chat messages from log.`);
   }
   private async poll() {

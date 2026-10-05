@@ -4,6 +4,7 @@ import android.content.Context
 import com.catemup.meowlingo.data.model.Reply
 import com.catemup.meowlingo.data.model.ServerMessage
 import com.catemup.meowlingo.data.websocket.ChatSocket
+import com.catemup.meowlingo.domain.mergeChatHistory
 import com.catemup.meowlingo.domain.ChatEntry
 import com.catemup.meowlingo.domain.DesktopEndpoint
 import com.catemup.meowlingo.notifications.ChatNotifications
@@ -32,6 +33,7 @@ data class ChatState(
     val whisperRecipient: String = "",
     val replyChannel: String = "Local",
     val search: String = "",
+    val theme: String = "system",
     val channelColors: Map<String, String> = emptyMap(),
     val hiddenChannels: Set<String> = emptySet(),
     val error: String? = null,
@@ -57,6 +59,18 @@ class ChatSession private constructor(context: Context) {
     private var entriesAtBottom = true
     private var saveJob: Job? = null
     private var editedWhisperRecipient = false
+    private var editedTheme = false
+    private var themeSaveJob: Job? = null
+    fun setTheme(theme: String) {
+        if (theme !in setOf("system", "light", "dark")) return
+        editedTheme = true
+        mutable.update { it.copy(theme = theme) }
+        themeSaveJob?.cancel()
+        themeSaveJob = scope.launch {
+            try { store.saveTheme(theme) }
+            catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not save theme") }
+        }
+    }
     private var editedColors = false
     private var colorSaveJob: Job? = null
     fun setChannelColor(channel: String, color: String) {
@@ -71,6 +85,10 @@ class ChatSession private constructor(context: Context) {
         }
     }
     init {
+        scope.launch {
+            try { val theme = store.readTheme(); if (!editedTheme) mutable.update { it.copy(theme = theme) } }
+            catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not load theme") }
+        }
         scope.launch {
             try { val colors = store.readChannelColors(); if (!editedColors) mutable.update { it.copy(channelColors = colors) } }
             catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not load channel colors") }
@@ -190,7 +208,6 @@ class ChatSession private constructor(context: Context) {
         muteJob = scope.launch { try { store.saveMuted(channels) } catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not save channel visibility") } }
     }
     fun visible(value: Boolean) {
-        if (value && !visible) mutable.update { it.copy(entries = it.entries.takeLast(it.historyLimit)) }
         visible = value
         if (value) { notifications.clearMessages(); markVisibleRead() }
     }
@@ -210,7 +227,7 @@ class ChatSession private constructor(context: Context) {
         if (state.value.replyChannel == "Whisper" && (recipient.isNullOrBlank() || recipient.any { it == '"' || it == '\n' || it == '\r' })) return false
         val id = UUID.randomUUID().toString()
         val channel = state.value.replyChannel
-        mutable.update { it.copy(entries = (it.entries + ChatEntry(id, "You", trimmed, outgoing = true, delivery = "Pending", channel = channel)).takeLast(1000)) }
+        mutable.update { it.copy(entries = (it.entries + ChatEntry(id, "You", trimmed, outgoing = true, delivery = "Pending", channel = channel))) }
         if (!socket.send(Reply(id = id, text = trimmed, channel = channel, recipient = recipient))) {
             mutable.update { current -> current.copy(entries = current.entries.map { if (it.id == id) it.copy(delivery = "Send failed") else it }) }
             return false
@@ -220,7 +237,7 @@ class ChatSession private constructor(context: Context) {
     fun explain(id: String) {
         val entry = state.value.entries.find { it.id == id } ?: return
         if (entry.outgoing || entry.explanation != null || entry.explanationLoading) return
-        val sent = state.value.status == "Connected" && socket.explain(id)
+        val sent = state.value.status == "Connected" && socket.explain(entry.serverId ?: id)
         mutable.update { current -> current.copy(entries = current.entries.map {
             if (it.id == id) it.copy(explanationLoading = sent, explanationError = if (sent) null else "Connect to the desktop to explain context.") else it
         }) }
@@ -228,15 +245,16 @@ class ChatSession private constructor(context: Context) {
     private fun receive(message: ServerMessage) {
         when (message.type) {
             "explanation" -> mutable.update { current -> current.copy(entries = current.entries.map {
-                if (it.id == message.id) it.copy(explanation = message.explanation, explanationLoading = false, explanationError = message.error) else it
+                if (it.id == message.id || it.serverId == message.id) it.copy(explanation = message.explanation, explanationLoading = false, explanationError = message.error) else it
             }) }
             "chat" -> {
-                if (state.value.entries.any { it.id == message.id }) return
                 val entry = ChatEntry(message.id!!, message.author!!, message.original!!, message.translated,
                     channel = message.channel ?: "General", timestamp = message.timestamp!!)
                 val read = message.replayed || visible && entriesAtBottom && matches(entry)
-                mutable.update { it.copy(entries = (it.entries + entry.copy(unread = !read)).takeLast(1000)) }
-                if (!message.replayed && !visible && entry.channel !in state.value.hiddenChannels) notifications.message(entry)
+                val merged = mergeChatHistory(state.value.entries, entry.copy(unread = !read), message.replayed)
+                mutable.update { it.copy(entries = merged.entries) }
+                if (merged.added && !merged.historical && !visible && entry.channel !in state.value.hiddenChannels) notifications.message(entry)
+
             }
             "status" -> if (message.status == "connected") mutable.update { it.copy(historyLimit = (message.historyLimit ?: 10).coerceIn(1, 500)) } else mutable.update { it.copy(sourceState = message.status.orEmpty(), sourceStatus = message.message.orEmpty()) }
             "reply_ready" -> mutable.update { current -> current.copy(entries = current.entries.map {

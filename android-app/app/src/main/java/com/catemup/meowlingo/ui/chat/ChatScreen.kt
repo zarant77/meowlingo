@@ -1,5 +1,6 @@
 package com.catemup.meowlingo.ui.chat
 
+import com.catemup.meowlingo.ui.theme.LocalDarkTheme
 import com.catemup.meowlingo.config.LocalChannelColors
 import com.catemup.meowlingo.config.channelBackground
 import com.catemup.meowlingo.config.channelForeground
@@ -150,7 +151,7 @@ fun ChatScreen(model: ChatViewModel, onEnableNotifications: () -> Unit, onReques
         ConnectionPanel(state, model::address,
             onConnect = { if (model.connect()) { settings = false; onRequestNotifications() } },
             onDisconnect = model::disconnect, onEnableNotifications = onEnableNotifications,
-            onChannelColor = model::setChannelColor,
+            onTheme = model::setTheme, onChannelColor = model::setChannelColor,
             onFindDesktop = model::findDesktop, onAutoConnect = model::setAutoConnect,
             onSelectDesktop = { if (model.connectToDesktop(it)) { settings = false; onRequestNotifications() } })
     }
@@ -162,9 +163,9 @@ private fun ChannelChip(name: String, selected: Boolean, unread: Int, onClick: (
     val background = channelBackground(name)
     val foreground = channelForeground(name)
     val borderWidth = with(LocalDensity.current) { 1f.toDp() }
-    Surface(color = if (selected) background else MaterialTheme.colorScheme.surface,
+    Surface(color = if (selected) background else MaterialTheme.colorScheme.surfaceVariant,
         contentColor = if (selected) foreground else MaterialTheme.colorScheme.onSurfaceVariant,
-        border = BorderStroke(borderWidth, Color.White),
+        border = BorderStroke(borderWidth, if (LocalDarkTheme.current && selected) Color.White else MaterialTheme.colorScheme.outline),
         shape = RoundedCornerShape(16.dp)) {
         Row(Modifier.toggleable(value = selected, role = Role.Button, onValueChange = { onClick() })
             .heightIn(min = 40.dp).padding(horizontal = 14.dp),
@@ -178,7 +179,7 @@ private fun ChannelChip(name: String, selected: Boolean, unread: Int, onClick: (
 @Composable
 private fun MessageBubble(entry: ChatEntry, onExplain: () -> Unit, onWhisper: () -> Unit) {
     var showExplanation by rememberSaveable(entry.id) { mutableStateOf(false) }
-    var showOriginal by rememberSaveable(entry.id) { mutableStateOf(false) }
+    var showOriginal by rememberSaveable(entry.id) { mutableStateOf(entry.outgoing) }
     val time = remember(entry.timestamp) { runCatching {
         DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(entry.timestamp))
     }.getOrDefault("") }
@@ -188,6 +189,7 @@ private fun MessageBubble(entry: ChatEntry, onExplain: () -> Unit, onWhisper: ()
             enabled = !entry.outgoing, onClick = {}, onLongClick = onWhisper, onLongClickLabel = "Whisper to ${entry.author}"),
             shape = RoundedCornerShape(10.dp),
             color = channelBackground(entry.channel), contentColor = channelForeground(entry.channel),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
             tonalElevation = 0.dp) {
             Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {

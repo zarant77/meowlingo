@@ -6,11 +6,29 @@ import type { Translator } from '../translation/translator.js';
 import type { CopyText } from '../clipboard/clipboard.js';
 import type { IncomingChatMessage, SourceStatus } from '../types/index.js';
 import { clientMessageSchema, messageIdSchema, type ServerMessage } from './protocol.js';
-export function createServer(host: string, port: number, translator: Translator, copy: CopyText, gameSender?: GameSender, historyLimit = 10, explain?: ContextExplainer) {
+export function createServer(host: string, port: number, translator: Translator, copy: CopyText, gameSender?: GameSender, historyLimit = 10, explain?: ContextExplainer, translateIncoming?: (message: IncomingChatMessage) => Promise<string>) {
   const explanations = new Map<string, Promise<string>>();
   const history: Extract<ServerMessage, { type: 'chat' }>[] = [];
   let sourceStatus: SourceStatus | undefined;
-  let chatQueue = Promise.resolve();
+  const translationJobs = new Set<Promise<void>>();
+  let activeTranslations = 0;
+  const translationWaiters: (() => void)[] = [];
+  async function translateChat(chat: Extract<ServerMessage, { type: 'chat' }>) {
+    if (activeTranslations < 3) activeTranslations++;
+    else await new Promise<void>(resolve => translationWaiters.push(resolve));
+    try {
+      const translated = await (translateIncoming ? translateIncoming({ author: chat.author, channel: chat.channel, text: chat.original }) : translator.translateToUkrainian(chat.original));
+      if (translated !== chat.translated) {
+        chat.translated = translated;
+        for (const socket of server.clients) send(socket, chat);
+      }
+    } catch {
+      console.error('Chat translation failed; keeping original text.');
+    } finally {
+      const next = translationWaiters.shift();
+      if (next) next(); else activeTranslations--;
+    }
+  }
   const server = new WebSocketServer({ host, port, maxPayload: 16384 });
   const send = (socket: WebSocket, message: ServerMessage) => {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
@@ -94,20 +112,23 @@ export function createServer(host: string, port: number, translator: Translator,
       for (const socket of server.clients) send(socket, { type: 'status', ...status });
     },
     broadcastChat(message: IncomingChatMessage): Promise<void> {
-      const job = chatQueue.then(async () => {
-        const chat: Extract<ServerMessage, { type: 'chat' }> = { type: 'chat', id: randomUUID(), timestamp: message.timestamp ?? new Date().toISOString(),
-          author: message.author, channel: message.channel ?? 'General', original: message.text,
-          translated: await translator.translateToUkrainian(message.text) };
-        history.push(chat);
-        if (history.length > Math.max(200, historyLimit)) { const removed = history.shift(); if (removed) explanations.delete(removed.id); }
-        for (const socket of server.clients) send(socket, chat);
-      });
-      chatQueue = job.catch(() => {});
+      const chat: Extract<ServerMessage, { type: 'chat' }> = {
+        type: 'chat', id: randomUUID(), timestamp: message.timestamp ?? new Date().toISOString(),
+        author: message.author, channel: message.channel ?? 'General', original: message.text,
+        translated: message.text, ...(message.replayed ? { replayed: true } : {}),
+      };
+      history.push(chat);
+      if (history.length > Math.max(200, historyLimit)) { const removed = history.shift(); if (removed) explanations.delete(removed.id); }
+      for (const socket of server.clients) send(socket, chat);
+      const job = translateChat(chat);
+      translationJobs.add(job);
+      void job.finally(() => translationJobs.delete(job));
       return job;
     },
     async close() {
       await replyQueue;
-      await chatQueue;
+      await Promise.all(translationJobs);
+      await Promise.allSettled(explanations.values());
       for (const socket of server.clients) socket.terminate();
       await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     },

@@ -16,5 +16,5 @@ test('context explainer sends originals separately from instructions and handles
       {headers:{'Content-Type':'application/json'}});
   }});
   assert.equal(await explain({author:'Player', channel:'Local', original:'brb'}, []), 'brb — скоро повернуся.');
-  await assert.rejects(createContextExplainer(undefined, 'gpt-6-luna')({author:'Player', channel:'Local', original:'brb'}, []), /OPENAI_API_KEY/);
+  await assert.rejects(createContextExplainer(undefined, 'gpt-6-luna')({author:'Player', channel:'Local', original:'brb'}, []), /API key/);
 });

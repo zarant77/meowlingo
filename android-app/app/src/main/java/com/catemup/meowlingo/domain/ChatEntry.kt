@@ -15,4 +15,5 @@ data class ChatEntry(
     val explanationLoading: Boolean = false,
     val explanationError: String? = null,
     val unread: Boolean = false,
+    val serverId: String? = null,
 )

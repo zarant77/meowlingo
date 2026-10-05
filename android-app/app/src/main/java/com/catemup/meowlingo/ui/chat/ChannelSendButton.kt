@@ -1,5 +1,7 @@
 package com.catemup.meowlingo.ui.chat
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
@@ -84,8 +86,17 @@ fun ChannelSendButton(channel: String, enabled: Boolean, onSelect: (String) -> U
                 }
             }
         }
+        val channelColor = channelBackground(channel)
         FilledIconButton(onClick = { submit(channelLatest) }, enabled = enabled,
-            modifier = Modifier.size(56.dp)) { Icon(Icons.AutoMirrored.Filled.Send, "Send; hold and slide to choose a channel") }
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = channelColor,
+                contentColor = channelForeground(channel),
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+            modifier = Modifier.size(56.dp).then(
+                if (!enabled) Modifier.border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                    .border(1.dp, channelColor, CircleShape)
+                else Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))) { Icon(Icons.AutoMirrored.Filled.Send, "Send; hold and slide to choose a channel") }
     }
     if (whisperDialog) AlertDialog(onDismissRequest = { whisperDialog = false }, title = { Text("Private message") },
         text = { OutlinedTextField(recipient, { recipient = it }, label = { Text("Recipient nickname") }, singleLine = true) },

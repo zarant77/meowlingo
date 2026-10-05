@@ -20,6 +20,19 @@ let app = NSWorkspace.shared.frontmostApplication
 let name = app?.localizedName ?? "unknown"
 let bundle = app?.bundleIdentifier ?? "unknown"
 let path = app?.bundleURL?.path ?? "unknown"
+if CommandLine.arguments.contains("--request-permissions") {
+    let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+    _ = AXIsProcessTrustedWithOptions(options)
+    _ = CGRequestPostEventAccess()
+}
+if CommandLine.arguments.contains("--permissions") || CommandLine.arguments.contains("--request-permissions") {
+    let data = try! JSONSerialization.data(withJSONObject: [
+        "trusted": AXIsProcessTrusted() && CGPreflightPostEventAccess(),
+        "helperPath": CommandLine.arguments[0]
+    ])
+    print(String(data: data, encoding: .utf8)!)
+    exit(0)
+}
 let trusted = AXIsProcessTrusted() && CGPreflightPostEventAccess()
 let context = "Foreground: \(name); bundle: \(bundle); path: \(path); keyboard permission: \(trusted)"
 if CommandLine.arguments.contains("--diagnose") { report("disabled", context) }
@@ -39,8 +52,10 @@ if AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString,
 }
 let identity = "\(name) \(bundle) \(path) \(title)".lowercased().replacingOccurrences(of: " ", with: "")
 if !identity.contains("projectzomboid") { report("not_focused", "\(context); title: \(title)") }
-guard CommandLine.arguments.count == 2 else { report("failed", "Expected clipboard text argument.") }
+guard CommandLine.arguments.count == 2 || CommandLine.arguments.count == 3 else { report("failed", "Expected clipboard text argument.") }
 let expectedText = CommandLine.arguments[1]
+let inputMode = CommandLine.arguments.count == 3 ? CommandLine.arguments[2] : "typing"
+guard inputMode == "typing" || inputMode == "paste" else { report("failed", "Unsupported input mode.") }
 func checkClipboard() {
     if NSPasteboard.general.string(forType: .string) != expectedText {
         report("failed", "Clipboard changed since reply was received; stopped input to avoid sending unrelated text.")
@@ -80,6 +95,7 @@ controlPress(0)
 Thread.sleep(forTimeInterval: 0.3)
 checkFocus("text input")
 checkClipboard()
+// Always use direct text on macOS: the game may paste a stale internal clipboard.
 // Bypass the game's cached clipboard by posting the exact reply as Unicode.
 for (index, character) in expectedText.enumerated() {
     if index % 32 == 0 {
@@ -108,7 +124,8 @@ Thread.sleep(forTimeInterval: 0.5)
 checkFocus("Enter")
 checkClipboard()
 press(36)
-report("keys_sent", "Core Graphics issued T, Ctrl+A, direct Unicode text, Enter (game clipboard cache bypassed). \(context)")
+let fallback = inputMode == "paste" ? " Paste mode used direct text on macOS to avoid stale game clipboard contents." : ""
+report("keys_sent", "Core Graphics issued T, Ctrl+A, direct Unicode text, Enter.\(fallback) \(context)")
 `;
 let helperBuild: Promise<string> | undefined;
 export function macInputHelper(): Promise<string> {
@@ -137,4 +154,12 @@ async function buildHelper(): Promise<string> {
   }
   console.log(`macOS keyboard helper: ${helper}`);
   return helper;
+}
+
+export async function macInputPermissions(request = false): Promise<{ trusted: boolean; helperPath: string }> {
+  const helper = await macInputHelper();
+  const { stdout } = await execute(helper, [request ? '--request-permissions' : '--permissions'], { timeout: 15000 });
+  const result = JSON.parse(stdout);
+  if (typeof result.trusted !== 'boolean' || typeof result.helperPath !== 'string') throw new Error('Invalid permission status');
+  return result;
 }

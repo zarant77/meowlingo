@@ -40,11 +40,11 @@ Android keeps session state in `ChatSession`, exposed by its ViewModel. A user-s
 
 ## Console launcher
 
-Requires Node.js 22+, JDK 17, Android SDK 36, and platform-tools. Run from the project root:
+Requires Node.js 22.13+, JDK 17, Android SDK 36, and platform-tools. Run from the project root:
 
 ```sh
 node launch.mjs                # interactive menu
-node launch.mjs setup          # install desktop dependencies; create .env if missing
+node launch.mjs setup          # install desktop dependencies; create config.json if missing
 node launch.mjs desktop        # watch actual Project Zomboid logs
 node launch.mjs mock           # simulated chat, unchanged text
 node launch.mjs android-build  # build debug APK
@@ -99,7 +99,7 @@ This builds and installs the latest Android app, creates the reverse tunnel, ope
 node launch.mjs usb-connect
 ```
 
-With multiple devices, append `--device SERIAL`. USB commands verify that the selected phone uses a wired adb transport; explicit emulator targets are also supported for testing. The tunnel uses `MEOWLINGO_PORT` from the environment or `desktop-client/.env`. Keep the desktop listener accessible through localhost (`MEOWLINGO_HOST=0.0.0.0` or `127.0.0.1`). Android receives the selected port as a launcher intent and temporarily pauses LAN auto-connect for this session.
+With multiple devices, append `--device SERIAL`. USB commands verify that the selected phone uses a wired adb transport; explicit emulator targets are also supported for testing. The tunnel uses `MEOWLINGO_PORT` from the environment or `desktop-client/config.json`. Keep the desktop listener accessible through localhost (`MEOWLINGO_HOST=0.0.0.0` or `127.0.0.1`). Android receives the selected port as a launcher intent and temporarily pauses LAN auto-connect for this session.
 
 Unplugging the cable loses the tunnel. Plug it back in and rerun `usb-connect`. To stop this connection explicitly:
 
@@ -146,11 +146,10 @@ Keep API keys on desktop only. The current placeholder never uses them.
 ```sh
 cd desktop-client
 npm ci
-cp .env.example .env
 npm run dev
 ```
 
-PowerShell: `Copy-Item .env.example .env`. The server defaults to `0.0.0.0:8765`; allow this port through your desktop firewall on the trusted LAN. Run one server per port.
+The client creates `config.json` automatically. The server defaults to `0.0.0.0:8765`; allow this port through your desktop firewall on the trusted LAN. Run one server per port.
 
 ```sh
 npm run mock:chat              # alternate input, no game required
@@ -208,25 +207,20 @@ macOS keyboard input uses a small Core Graphics helper, compiled and cached unde
 
 ## OpenAI translation
 
-From `desktop-client`, copy `.env.example` to `.env` if it does not exist. Preserve any existing connection settings, then set:
+Run `npm install`, then `npm run desktop:dev`. In Settings, select OpenAI, enter your API key and model, and save. You can edit context explanation instructions in the same form. The client restarts with the new settings.
 
-```dotenv
-TRANSLATOR_PROVIDER=openai
-OPENAI_API_KEY=your_api_key_here
-OPENAI_MODEL=gpt-6-luna
-```
+CLI (`npm run dev` / `npm start`) creates `desktop-client/config.json` automatically. Edit that JSON to set `TRANSLATOR_PROVIDER` to `openai`, `OPENAI_API_KEY` and `OPENAI_MODEL`; then restart. Mock is the default and the fallback without a key. A previous `.env` is imported only when no config.json exists. The API key never travels to Android.
 
-Run `npm install`, then `npm run dev` (or `npm run build` and `npm start`). Restart after changing `.env`. API keys and the model are read only from `desktop-client/.env`; the key is never sent to Android. `.env` is ignored by Git. Select `TRANSLATOR_PROVIDER=mock` for unchanged text; mock is the default and the fallback when the key is missing.
 
 The [official OpenAI JavaScript SDK](https://developers.openai.com/api/docs/libraries) calls the Responses API with a 15-second timeout per attempt and at most two SDK retries for transient failures. Failed, empty or incomplete translations are logged without credentials and return the original text. Incoming chat is translated to natural Ukrainian; replies to English. Prompts preserve nicknames, URLs, numbers, place names and Project Zomboid terms and request only the translation. Messages are sent to OpenAI only when this provider is enabled; response storage is disabled. Automated tests simulate the API; account/model access must be checked with your own key.
 
-On macOS, game input uses T, Ctrl+A, direct Unicode text events, Enter. This bypasses Project Zomboid's cached clipboard, which can paste an older message even when the system clipboard is correct. The desktop still copies the channel-prefixed reply for manual pasting. Validate this input method in your game; keyboard events are not a delivery acknowledgement.
+On macOS, both Typing and Paste settings use T, Ctrl+A, direct Unicode text events, Enter. Ctrl+V is not used for automatic input on macOS. This bypasses Project Zomboid's cached clipboard, which can paste an older message even when the system clipboard is correct. The desktop still copies the channel-prefixed reply for manual pasting. Validate this input method in your game; keyboard events are not a delivery acknowledgement.
 
 Android channel colors can be edited under Settings → Channel colors using #RRGGBB values, with Save and Reset controls. Changes persist between launches and apply to filter buttons, send-channel menu rows and message bubbles. Text automatically uses a contrasting color. Defaults in `android-app/app/src/main/java/com/catemup/meowlingo/config/AppSettings.kt` are /say white, /all dark orange, /faction pink, /safehouse dark green, /yell red and /whisper purple. Unknown channels receive a stable generated color. Bubbles show the author and time above the message; the channel is indicated by color.
 
 Android opens HTTP(S), www and discord.gg links from message text. The composer defaults to `/say`; tap Send for the current channel or hold it, slide over a channel and release to send. Drag outside the menu to cancel. Available destinations are `/all`, `/say`, `/yell`, `/faction`, `/safehouse` and `/whisper`. Whisper asks for a recipient nickname before sending and remembers it for the session. Install the updated desktop and Android together because replies now support an optional `recipient` field.
 
-Set `MEOWLINGO_HISTORY_COUNT=10` in `desktop-client/.env` to control how many recent messages are loaded from the newest chat log on desktop startup and replayed when Android connects (1–500). Restart the desktop after changing it. The default now loads recent history even with `MEOWLINGO_READ_HISTORY=false`; that flag enables reading the entire file instead. History comes from the currently selected log, then live tailing continues without duplicating imported messages.
+Set `"MEOWLINGO_HISTORY_COUNT": 10` in `desktop-client/config.json` to control how many recent messages are loaded from the newest chat log on desktop startup and replayed when Android connects (1–500). Restart the desktop after changing it. The default now loads recent history even with `MEOWLINGO_READ_HISTORY=false`; that flag enables reading the entire file instead. History comes from the currently selected log, then live tailing continues without duplicating imported messages.
 
 ## Installable desktop application
 
@@ -245,7 +239,8 @@ Build an installer on the target operating system:
 npm run desktop:make
 ```
 
-macOS produces an `.app`, a ZIP and an installable DMG under `desktop-client/out/`; drag MeowLingo into Applications. Windows produces `MeowLingo-Setup.exe`. Builds include their own Electron/Node runtime. The macOS keyboard helper is compiled during packaging and included as a resource; end users do not need Xcode. App settings and the OpenAI key are saved only in a private user `.env`, accessible with **Show .env file**. The packaged app never includes your development `.env`. The CLI retains its existing commands and `.env` location.
+macOS produces an `.app`, a ZIP and an installable DMG under `desktop-client/out/`; drag MeowLingo into Applications. Windows produces `MeowLingo-Setup.exe`. Builds include their own Electron/Node runtime. The macOS keyboard helper is compiled during packaging and included as a resource; end users do not need Xcode. App settings, the OpenAI key and context explanation instructions are saved together in a private user `config.json`, accessible with **Show config.json**. The packaged app excludes your local config and legacy .env. On macOS the file is under `~/Library/Application Support/MeowLingo/config.json`; on Windows, under `%APPDATA%/MeowLingo/config.json`. CLI uses `desktop-client/config.json`. Desktop `config.example.json` contains only default instructions; other defaults come from the config schema.
+
 
 On macOS, grant Accessibility to the installed app or the included `MeowLingo.app/Contents/Resources/meowlingo-game-input` helper when automatic input reports missing permission. Test keyboard input with Zomboid foreground and chat closed.
 
@@ -269,11 +264,12 @@ Desktop installers are currently unsigned and macOS builds are not notarized. Th
 
 Tap `?` on an incoming Android message to explain unclear slang, abbreviations, idioms, locations and Project Zomboid/server terms in Ukrainian. The desktop sends the original text and up to five preceding incoming chat messages through the OpenAI Responses API. Instructions exclude repeated translations and obvious words, and require uncertain meanings to be identified as probable.
 
-Use `OPENAI_API_KEY` and `OPENAI_MODEL` in the desktop `.env`. Explanation works independently of `TRANSLATOR_PROVIDER`, so mock translation can still use real OpenAI explanations. Missing credentials and API failures appear below the message with a retry option.
+Set your API key and model in desktop Settings or the local `config.json`. Explanation works independently of `TRANSLATOR_PROVIDER`, so mock translation can still use real OpenAI explanations. Missing credentials and API failures appear below the message with a retry option.
 
 Explanations can be collapsed and reopened without another API request. Android retains results while the message is in its current session, and desktop caches results and deduplicates concurrent requests while messages remain in its history (at least 200 messages). Cache is in memory; restarting the desktop clears it. An expired message reports that it is unavailable. Restart the updated desktop and install the updated Android APK together.
 
-Context explanation instructions live in `desktop-client/config/context-explanation.json` under `instructions`. Edit this file to adjust the prompt; CLI reads it for each new explanation request. Cached explanations remain unchanged. The config is included in desktop packages.
+Context explanation instructions are editable in desktop Settings and stored as `instructions` in the private `config.json`. Saving in the UI restarts the client and clears its in-memory explanation cache. CLI requires a restart after editing. The public `config.example.json` supplies default instructions and contains no key.
+
 
 
 ### Local build output
@@ -284,3 +280,27 @@ All installable builds are collected in the root `dist/` directory (ignored by G
 - Android `assembleRelease`: `dist/MeowLingo-android-release.apk` when signing is configured, or an explicitly named unsigned APK otherwise.
 
 Direct Gradle assemble commands also export APKs automatically. Desktop `npm run desktop:make` exports installers automatically. Compiler outputs and packaging intermediates stay in their existing build directories. GitHub Actions uploads and publishes files from the same root `dist/` directory.
+
+
+Android creates its own private `files/config.json` using `app/src/main/assets/config.defaults.json`. Address, auto-connect, preferred desktop, whisper recipient, hidden channels and custom colors persist there. Configure these from the app's Settings screen and channel controls; existing DataStore preferences are migrated automatically on first launch after updating. Android does not need an OpenAI key: AI requests and instructions are managed by the desktop.
+
+
+The interactive launcher has four primary actions: development over USB (build/install/open Android and run the desktop with hot reload), desktop builds, Android APK, and build/install Android APK. Utilities follow the primary actions in the same menu, separated by a divider. Run `node launch.mjs dev` directly for USB development; connect the phone, enable USB debugging and authorize the computer first. Older CLI commands remain available for existing scripts.
+
+Only DMG installers are exported for macOS to root `dist/`; Forge ZIP intermediates remain under `desktop-client/out/make/` and are not uploaded by release CI. Old exported macOS ZIP files are removed during collection.
+
+Desktop Settings → Game input mode selects `Typing` (default, direct Unicode text on macOS) or `Paste` (Ctrl+V). Stored in config.json as `MEOWLINGO_INPUT_MODE`. Paste is faster but may reuse stale clipboard text in Zomboid on macOS; choose Typing if that occurs. Both modes check clipboard contents and game focus before sending.
+
+Development launcher (`node launch.mjs dev`, menu option 1) installs/opens Android over USB and launches the Electron desktop window and tray. Desktop settings use `desktop-client/config.json`, matching the USB port configuration. TypeScript and Electron UI edits trigger a desktop restart. To start the desktop UI without Android, run `npm run desktop:dev` from desktop-client. Installed builds keep their separate private user config.
+
+Android Settings → Theme offers Light, Dark and Device theme (default). Selection applies immediately, including system bar icons, and persists in the private config.json.
+
+On macOS the desktop requests Accessibility on its first launch with automatic input enabled. A warning stays visible while permission is missing, with a button to open the correct System Settings page. Enable MeowLingo (Electron in development) and restart the client. macOS requires the user to grant the permission; clipboard functionality remains available without it.
+
+The macOS warning checks both Electron Accessibility and the actual keyboard helper's Accessibility/event-posting access. The helper requests its own permissions at startup, and the UI shows its path if it needs to be added separately. Permission checks never type or send a message.
+
+Incoming messages and initial history are delivered immediately as original text. Translation runs in the background (up to three requests at once) and updates the same message without duplicates or new notifications. Historical timestamps are preserved.
+
+Server announcements are cached locally in `translation-cache.sqlite` beside the desktop `config.json`. The single `server_messages` table has `original TEXT PRIMARY KEY`, `translation TEXT` and `explanation TEXT`. Only messages from author `Server` in the server channel are cached. A successful translation fills `translation`; pressing **?** fills `explanation` on the same row. Fields remain NULL until a successful response arrives. Repeated original messages reuse both results across restarts, regardless of model, instructions or surrounding conversation. Player messages are not persisted in this cache. Failed API calls and mock translations are never cached. **Clear translation cache** removes all rows; in-flight requests do not repopulate the cleared database. Already displayed messages and explanations remain visible on the phone.
+
+The previous two-table cache is migrated automatically: translations are preserved, while hashed explanation entries that cannot be linked to original messages are discarded.

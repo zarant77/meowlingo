@@ -1,9 +1,12 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MeowLingo</title><link rel="stylesheet" href="style.css"></head>
-<body><header><h1>MeowLingo</h1><p id="status">Starting desktop client…</p></header><main><form id="settings"><h2>Settings</h2>
+<body><aside id="accessibility-warning" role="alert" hidden><strong>Automatic game input needs Accessibility permission.</strong><p>Open System Settings → Privacy &amp; Security → Accessibility and enable MeowLingo (Electron when developing). Restart the client after granting permission. If the helper needs a separate permission, add it using the path below. Replies can still be copied to the clipboard.</p><p id="permission-details"></p><button type="button" id="accessibility-settings">Open Accessibility settings</button></aside><header><h1>MeowLingo</h1><p id="status">Starting desktop client…</p></header><main><form id="settings"><h2>Settings</h2>
 <label>Translator<select name="TRANSLATOR_PROVIDER"><option value="mock">Mock (unchanged text)</option><option value="openai">OpenAI</option></select></label>
-<label>OpenAI API key<input name="OPENAI_API_KEY" type="password" autocomplete="off"></label>
+<label>OpenAI API key<input name="OPENAI_API_KEY" type="text" autocomplete="off"></label>
 <label>Model<input name="OPENAI_MODEL"></label><label>WebSocket port<input name="MEOWLINGO_PORT" type="number" min="1" max="65535"></label>
 <label>Game log directory<input name="MEOWLINGO_LOG_DIR"></label><label>Recent messages<input name="MEOWLINGO_HISTORY_COUNT" type="number" min="1" max="500"></label>
 <label>Automatic game input<select name="MEOWLINGO_AUTO_SEND"><option value="true">Enabled</option><option value="false">Clipboard only</option></select></label>
-<button type="submit">Save and restart client</button><button type="button" id="open-config">Show .env file</button><p id="result" role="status"></p></form>
+<label>Game input mode<select name="MEOWLINGO_INPUT_MODE"><option value="typing">Typing (direct text input)</option><option value="paste">Paste (Ctrl+V from clipboard)</option></select></label>
+<p>Paste uses Ctrl+V on Windows. On macOS, both modes use direct text input because Zomboid can paste stale clipboard contents.</p>
+<label>Context explanation instructions<textarea name="instructions" rows="9" maxlength="20000" required></textarea></label>
+<button type="submit">Save and restart client</button><button type="button" id="open-config">Show config.json</button><button type="button" id="clear-translation-cache">Clear translation cache</button><p>Clears saved server translations and context explanations.</p><p id="result" role="status"></p></form>
 <section><h2>Activity</h2><p>Close the window to keep running in the tray. Use the tray menu to quit.</p><pre id="logs" aria-label="Client logs"></pre></section></main><script src="renderer.js"></script></body></html>

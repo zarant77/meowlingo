@@ -5,6 +5,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 private val Light = lightColorScheme(
@@ -12,7 +14,9 @@ private val Light = lightColorScheme(
     primaryContainer = Color(0xFFE5E9FF), onPrimaryContainer = Color(0xFF263374),
     secondary = Color(0xFF347B6B), secondaryContainer = Color(0xFFDAF4EB),
     onSecondaryContainer = Color(0xFF174C40),
-    background = Color(0xFFF5F6FB), surface = Color(0xFFFDFDFF),
+    background = Color(0xFFF5F6FB), onBackground = Color(0xFF18202B),
+    surface = Color(0xFFFDFDFF), onSurface = Color(0xFF18202B),
+    outline = Color(0xFF697386),
     surfaceVariant = Color(0xFFEAEDF5), onSurfaceVariant = Color(0xFF677084),
     outlineVariant = Color(0xFFDDE1EC),
 )
@@ -21,11 +25,18 @@ private val Dark = darkColorScheme(
     primaryContainer = Color(0xFF344382), onPrimaryContainer = Color(0xFFE2E7FF),
     secondary = Color(0xFF8DD9BE), secondaryContainer = Color(0xFF234C43),
     onSecondaryContainer = Color(0xFFB8F5DF),
-    background = Color(0xFF11151F), surface = Color(0xFF1B2030),
+    background = Color(0xFF11151F), onBackground = Color(0xFFF4F5F8),
+    surface = Color(0xFF1B2030), onSurface = Color(0xFFF4F5F8),
+    outline = Color(0xFF8993AA),
     surfaceVariant = Color(0xFF292F40), onSurfaceVariant = Color(0xFFADB5CA),
     outlineVariant = Color(0xFF373F53),
 )
+val LocalDarkTheme = staticCompositionLocalOf { false }
+
 @Composable
-fun MeowLingoTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, content = content)
+fun MeowLingoTheme(theme: String = "system", content: @Composable () -> Unit) {
+    val dark = when (theme) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }
+    CompositionLocalProvider(LocalDarkTheme provides dark) {
+        MaterialTheme(colorScheme = if (dark) Dark else Light, content = content)
+    }
 }

@@ -1,3 +1,8 @@
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { defaultConfigPath } from './config.js';
+import { ServerTranslationCache, isServerMessage } from './translation/serverTranslationCache.js';
+import { OpenAITranslator } from './translation/openAITranslator.js';
 import { nativeGameSender } from './zomboid/gameSender.js';
 import { macInputHelper } from './zomboid/macGameInput.js';
 import type { DesktopConfig } from './config.js';
@@ -8,9 +13,22 @@ import { copyText, type CopyText } from './clipboard/clipboard.js';
 import { MockChatSource, ProjectZomboidLogSource } from './zomboid/logWatcher.js';
 import { createServer } from './websocket/server.js';
 
-export function startDesktop(config: DesktopConfig, mockChat = false, copy: CopyText = copyText) {
+export function startDesktop(config: DesktopConfig, mockChat = false, copy: CopyText = copyText, cacheDirectory = dirname(process.env.MEOWLINGO_CONFIG_FILE ?? process.env.MEOWLINGO_ENV_FILE ?? fileURLToPath(defaultConfigPath))) {
 const translator = createTranslator(config.TRANSLATOR_PROVIDER, config.OPENAI_API_KEY, config.OPENAI_MODEL);
-const app = createServer(config.MEOWLINGO_HOST, config.MEOWLINGO_PORT, translator, copy, nativeGameSender(config.MEOWLINGO_AUTO_SEND), config.MEOWLINGO_HISTORY_COUNT, createContextExplainer(config.OPENAI_API_KEY, config.OPENAI_MODEL));
+let cache: ServerTranslationCache | undefined;
+if (config.OPENAI_API_KEY) {
+  try { cache = new ServerTranslationCache(join(cacheDirectory, 'translation-cache.sqlite')); }
+  catch { console.error('Translation cache unavailable; translations will continue without caching.'); }
+}
+const translateIncoming = (message: import('./types/index.js').IncomingChatMessage) =>
+  cache && translator instanceof OpenAITranslator && isServerMessage(message)
+    ? cache.translate(message, text => translator.translateToUkrainianForCache(text))
+    : translator.translateToUkrainian(message.text);
+const explain = createContextExplainer(config.OPENAI_API_KEY, config.OPENAI_MODEL, { instructions: config.instructions });
+const explainCached: typeof explain = (message, previous) => cache
+  ? cache.explain(message, previous, explain)
+  : explain(message, previous);
+const app = createServer(config.MEOWLINGO_HOST, config.MEOWLINGO_PORT, translator, copy, nativeGameSender(config.MEOWLINGO_AUTO_SEND, config.MEOWLINGO_INPUT_MODE), config.MEOWLINGO_HISTORY_COUNT, explainCached, translateIncoming);
 if (process.platform === 'darwin' && config.MEOWLINGO_AUTO_SEND) {
   void macInputHelper()
     .then(() => console.log('macOS keyboard helper ready. Keep Zomboid foreground when sending from Android.'))
@@ -43,6 +61,13 @@ async function shutdown() {
   await sourceStart;
   await source.stop();
   await app.close();
+  cache?.close();
 }
-return { server: app.server, stop: shutdown };
+return { server: app.server, stop: shutdown, clearTranslationCache() {
+  if (!cache) {
+    const stored = new ServerTranslationCache(join(cacheDirectory, 'translation-cache.sqlite'));
+    try { stored.clear(); } finally { stored.close(); }
+  } else cache.clear();
+  console.log('Server translation and explanation cache cleared.');
+} };
 }

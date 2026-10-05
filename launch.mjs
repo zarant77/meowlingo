@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { access, copyFile, readFile } from 'node:fs/promises';
+import { access, copyFile, readFile, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,9 +75,12 @@ async function targetDevice() {
 }
 async function ensureDesktop() {
   if (!await exists(join(desktop, 'node_modules', 'tsx', 'package.json'))) await npm('ci');
-  if (!await exists(join(desktop, '.env'))) {
-    await copyFile(join(desktop, '.env.example'), join(desktop, '.env'), constants.COPYFILE_EXCL);
-    console.log('Created desktop-client/.env from the example.');
+  if (!await exists(join(desktop, 'config.json'))) {
+    const example = JSON.parse(await readFile(join(desktop, 'config.example.json'), 'utf8'));
+    const require = createRequire(join(desktop, 'package.json'));
+    const legacy = await exists(join(desktop, '.env')) ? require('dotenv').parse(await readFile(join(desktop, '.env'))) : {};
+    await writeFile(join(desktop, 'config.json'), JSON.stringify({ ...example, ...legacy }, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+    console.log('Created desktop-client/config.json. Configure it in desktop Settings.');
   }
 }
 function addresses() {
@@ -85,7 +88,7 @@ function addresses() {
   for (const entries of Object.values(networkInterfaces())) for (const item of entries || []) {
     if (item.family === 'IPv4' && !item.internal) console.log(`Phone address on your local network: ws://${item.address}:8765`);
   }
-  console.log('If MEOWLINGO_PORT is changed in .env, use that port instead. Press Ctrl+C to stop the desktop client.');
+  console.log('If MEOWLINGO_PORT is changed in config.json, use that port instead. Press Ctrl+C to stop the desktop client.');
 }
 async function install(open = false, selectedTarget) {
   const target = selectedTarget ?? await targetDevice();
@@ -96,7 +99,9 @@ async function install(open = false, selectedTarget) {
 async function desktopPort() {
   const require = createRequire(join(desktop, 'package.json'));
   const { parse } = require('dotenv');
-  const values = parse(await readFile(join(desktop, '.env')));
+  const values = await exists(join(desktop, 'config.json'))
+    ? JSON.parse(await readFile(join(desktop, 'config.json'), 'utf8'))
+    : parse(await readFile(join(desktop, '.env')));
   const port = Number(process.env.MEOWLINGO_PORT ?? values.MEOWLINGO_PORT ?? 8765);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('MEOWLINGO_PORT must be an integer from 1 to 65535.');
   const host = process.env.MEOWLINGO_HOST ?? values.MEOWLINGO_HOST ?? '0.0.0.0';
@@ -138,6 +143,7 @@ async function disconnectUsb() {
   console.log('USB tunnel removed and Android disconnected. The desktop client keeps running.');
 }
 const commands = {
+  dev: async () => { await connectUsb(true); await npm('run', 'desktop:dev'); },
   setup: async () => { await npm('ci'); await ensureDesktop(); },
   desktop: async () => { await ensureDesktop(); addresses(); await npm('run', 'dev'); },
   mock: async () => { await ensureDesktop(); addresses(); await npm('run', 'mock:chat'); },
@@ -147,7 +153,7 @@ const commands = {
   install: () => install(false),
   'android-run': () => install(true),
   devices,
-  usb: async () => { await connectUsb(true); await npm('run', 'dev'); },
+  usb: async () => commands.dev(),
   'usb-connect': () => connectUsb(false),
   'usb-disconnect': disconnectUsb,
   check: async () => { await ensureDesktop(); await npm('run', 'typecheck'); await npm('test'); await run(process.execPath, ['--test', join(root, 'launcher.test.mjs')]); await gradle('assembleDebug', 'testDebugUnitTest'); },
@@ -156,24 +162,30 @@ const commands = {
     console.log(`Node: ${process.version}\nAndroid SDK: ${await sdkDirectory()}`);
     await npm('--version'); await run('java', ['-version']); await gradle('--version'); await devices();
   },
-  help: async () => console.log(`MeowLingo — console launcher\n\nnode launch.mjs [command] [--device SERIAL]\nOmit the command to open the interactive menu.\n
-setup          Install npm dependencies and create .env if missing
-mock           Start the desktop client with mock chat
-desktop        Start the desktop client and watch Project Zomboid logs
-build          Build both clients
-desktop-build  Build desktop installers into dist/
+  help: async () => console.log(`MeowLingo — console launcher
+
+node launch.mjs [command] [--device SERIAL]
+Omit the command to open the interactive menu.
+
+Main actions:
+dev            Build/install Android over USB and start the desktop window with hot reload
+desktop-build  Build desktop app into dist/
 android-build  Build the debug APK into dist/
-install        Build and install the APK on the selected device
-android-run    Build, install, and open the Android app
+
+Utilities:
 devices        List Android devices
-usb            Build/install Android, connect over USB, and start the desktop
-usb-connect    Connect an installed Android app to a running desktop over USB
+usb-connect    Restore the USB connection without rebuilding Android
 usb-disconnect Disconnect Android and remove its USB tunnel
-check          Run typecheck, desktop/launcher tests, and Android build/tests
-all            Install and open Android, then start the live desktop client
+check          Run project checks and tests
+setup          Install desktop dependencies and create config.json if missing
 doctor         Check Node, npm, Java, Gradle, and adb
-help           Show this help\n
-Requires Node.js 22+, JDK 17, Android SDK 36, and USB debugging for a physical device.`),
+mock           Start the desktop with mock chat
+desktop        Start only the desktop in watch mode
+help           Show this help
+
+Requires Node.js 22+, JDK 17, Android SDK 36.
+For dev, connect your phone with a data cable, enable USB debugging and authorize the computer.
+Use --device SERIAL when multiple devices are connected.`),
 };
 async function main() {
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Node.js 22 or newer is required.');
@@ -183,16 +195,27 @@ async function main() {
     await action(); return;
   }
   if (!process.stdin.isTTY) { await commands.help(); return; }
-  const options = [
-    ['usb', 'Install Android and start the desktop over USB'],
-    ['usb-connect', 'Connect over USB to a running desktop'], ['usb-disconnect', 'Disconnect USB'],
-    ['mock', 'Start the mock desktop client'], ['all', 'Install Android and start the live desktop client'],
-    ['android-run', 'Build, install, and open Android'], ['android-build', 'Build the Android APK'],
-    ['desktop-build', 'Build desktop installers'], ['build', 'Build both clients'], ['check', 'Check the project'], ['devices', 'List Android devices'],
-    ['setup', 'Install desktop dependencies'], ['doctor', 'Check the environment'], ['desktop', 'Start the desktop client with live game logs'],
+  const primary = [
+    ['dev', 'Start development (install Android over USB)'],
+    ['desktop-build', 'Build desktop app'],
+    ['android-build', 'Build Android APK'],
+    ['install', 'Build and install Android APK'],
   ];
+  const utilities = [
+    ['devices', 'List Android devices'],
+    ['usb-connect', 'Restore USB connection'],
+    ['usb-disconnect', 'Disconnect USB'],
+    ['check', 'Run project checks'],
+    ['setup', 'Install desktop dependencies'],
+    ['doctor', 'Check the environment'],
+    ['mock', 'Start desktop with mock chat'],
+    ['desktop', 'Start desktop only'],
+  ];
+  const options = [...primary, ...utilities];
   while (true) {
-    console.log('\nMeowLingo\n' + options.map(([_, title], i) => `${i + 1}. ${title}`).join('\n') + '\n0. Exit');
+    console.log('\nMeowLingo\n' +
+      options.map(([_, title], i) => (i === primary.length ? '--------\n' : '') + `${i + 1}. ${title}`).join('\n') +
+      '\n0. Exit');
     const input = createInterface({ input: process.stdin, output: process.stdout });
     let answer;
     try { answer = (await input.question('Choose an action: ')).trim(); } finally { input.close(); }

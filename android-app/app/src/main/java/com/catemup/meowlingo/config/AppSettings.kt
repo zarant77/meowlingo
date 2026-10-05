@@ -31,4 +31,4 @@ fun channelBackground(channel: String): Color {
 
 @Composable
 fun channelForeground(channel: String): Color =
-    if (channelBackground(channel).luminance() > 0.179f) Color(0xFF18202B) else Color.White
+    if (channelBackground(channel).luminance() > 0.179f) Color.Black else Color.White

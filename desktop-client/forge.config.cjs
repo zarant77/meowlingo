@@ -4,8 +4,8 @@ module.exports = {
     icon: path.resolve('electron/assets/icon'),
     name: 'MeowLingo', executableName: 'MeowLingo', appBundleId: 'com.catemup.meowlingo.desktop',
     asar: { unpack: '**/node_modules/clipboardy/fallbacks/**' },
-    extraResource: [path.resolve('.env.example'), ...(process.platform === 'darwin' ? [path.resolve('native/meowlingo-game-input')] : [])],
-    ignore: [/^\/(src|test|scripts|native|out)(\/|$)/, /^\/\.env$/, /^\/\.env\.(?!example)/, /^\/forge\.config\.cjs$/],
+    extraResource: [...(process.platform === 'darwin' ? [path.resolve('native/meowlingo-game-input')] : [])],
+    ignore: [/^\/translation-cache\.sqlite(?:-.*)?$/, /^\/(src|test|scripts|native|out)(\/|$)/, /^\/config\.json(?:\.tmp)?$/, /^\/\.env$/, /^\/\.env\.(?!example)/, /^\/forge\.config\.cjs$/],
   },
   makers: [
     { name: '@electron-forge/maker-zip', platforms: ['darwin'] },

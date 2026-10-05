@@ -1,37 +1,95 @@
 package com.catemup.meowlingo.data
 
 import android.content.Context
-import androidx.datastore.preferences.core.edit
+import android.util.AtomicFile
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 
-private val Context.settings by preferencesDataStore(name = "connection")
+private val Context.legacySettings by preferencesDataStore(name = "connection")
+
 class AddressStore(private val context: Context) {
-    private val colors = stringSetPreferencesKey("channel_colors")
-    suspend fun readChannelColors(): Map<String, String> =
-        (context.settings.data.first()[colors] ?: emptySet()).mapNotNull {
-            val parts = it.split("=", limit = 2)
-            if (parts.size == 2 && com.catemup.meowlingo.config.isChannelColor(parts[1])) parts[0] to parts[1] else null
-        }.toMap()
-    suspend fun saveChannelColors(values: Map<String, String>) {
-        context.settings.edit { it[colors] = values.map { (channel, color) -> "$channel=$color" }.toSet() }
+    private val file = AtomicFile(File(context.filesDir, "config.json"))
+    private val mutex = Mutex()
+
+    private fun write(settings: JSONObject) {
+        val output = file.startWrite()
+        try {
+            output.write((settings.toString(2) + "\n").toByteArray(Charsets.UTF_8))
+            file.finishWrite(output)
+        } catch (failure: Exception) {
+            file.failWrite(output)
+            throw failure
+        }
     }
-    private val whisperRecipient = stringPreferencesKey("whisper_recipient")
-    suspend fun readWhisperRecipient(): String = context.settings.data.first()[whisperRecipient] ?: ""
-    suspend fun saveWhisperRecipient(recipient: String) { context.settings.edit { it[whisperRecipient] = recipient } }
-    private val preferred = stringPreferencesKey("preferred_desktop")
-    private val automatic = booleanPreferencesKey("auto_connect")
-    suspend fun readPreferredDesktop(): String? = context.settings.data.first()[preferred]
-    suspend fun readAutoConnect(): Boolean = context.settings.data.first()[automatic] ?: true
-    suspend fun savePreferredDesktop(id: String) { context.settings.edit { it[preferred] = id } }
-    suspend fun saveAutoConnect(enabled: Boolean) { context.settings.edit { it[automatic] = enabled } }
-    private val muted = stringSetPreferencesKey("muted_channels")
-    private val key = stringPreferencesKey("address")
-    suspend fun readMuted(): Set<String> = context.settings.data.first()[muted] ?: emptySet()
-    suspend fun saveMuted(channels: Set<String>) { context.settings.edit { it[muted] = channels } }
-    suspend fun read(): String = context.settings.data.first()[key] ?: "ws://10.0.2.2:8765"
-    suspend fun save(address: String) { context.settings.edit { it[key] = address } }
+
+    private suspend fun load(): JSONObject {
+        val defaults = JSONObject(context.assets.open("config.defaults.json").bufferedReader().use { it.readText() })
+        if (file.baseFile.exists()) {
+            val saved = JSONObject(file.openRead().bufferedReader().use { it.readText() })
+            saved.keys().forEach { defaults.put(it, saved.get(it)) }
+            return defaults
+        }
+        // Migrate existing installations without losing connection or channel preferences.
+        val old = context.legacySettings.data.first()
+        old[stringPreferencesKey("address")]?.let { defaults.put("address", it) }
+        old[booleanPreferencesKey("auto_connect")]?.let { defaults.put("autoConnect", it) }
+        old[stringPreferencesKey("preferred_desktop")]?.let { defaults.put("preferredDesktop", it) }
+        old[stringPreferencesKey("whisper_recipient")]?.let { defaults.put("whisperRecipient", it) }
+        old[stringSetPreferencesKey("muted_channels")]?.let { defaults.put("hiddenChannels", JSONArray(it.toList())) }
+        val colors = JSONObject()
+        old[stringSetPreferencesKey("channel_colors")]?.forEach {
+            val parts = it.split("=", limit = 2)
+            if (parts.size == 2) colors.put(parts[0], parts[1])
+        }
+        defaults.put("channelColors", colors)
+        write(defaults)
+        return defaults
+    }
+
+    private suspend fun <T> readValue(read: (JSONObject) -> T): T =
+        withContext(Dispatchers.IO) { mutex.withLock { read(load()) } }
+
+    private suspend fun saveValue(key: String, value: Any) {
+        withContext(Dispatchers.IO) { mutex.withLock {
+            val settings = load()
+            settings.put(key, value)
+            write(settings)
+        } }
+    }
+
+    suspend fun readTheme(): String = readValue {
+        it.optString("theme", "system").takeIf { theme -> theme in setOf("system", "light", "dark") } ?: "system"
+    }
+    suspend fun saveTheme(theme: String) = saveValue("theme", theme)
+    suspend fun readChannelColors(): Map<String, String> = readValue { settings ->
+        val colors = settings.getJSONObject("channelColors")
+        colors.keys().asSequence().mapNotNull { channel ->
+            val color = colors.optString(channel)
+            if (com.catemup.meowlingo.config.isChannelColor(color)) channel to color else null
+        }.toMap()
+    }
+    suspend fun saveChannelColors(values: Map<String, String>) = saveValue("channelColors", JSONObject(values))
+    suspend fun readWhisperRecipient(): String = readValue { it.getString("whisperRecipient") }
+    suspend fun saveWhisperRecipient(recipient: String) = saveValue("whisperRecipient", recipient)
+    suspend fun readPreferredDesktop(): String? = readValue { if (it.isNull("preferredDesktop")) null else it.getString("preferredDesktop") }
+    suspend fun readAutoConnect(): Boolean = readValue { it.getBoolean("autoConnect") }
+    suspend fun savePreferredDesktop(id: String) = saveValue("preferredDesktop", id)
+    suspend fun saveAutoConnect(enabled: Boolean) = saveValue("autoConnect", enabled)
+    suspend fun readMuted(): Set<String> = readValue { settings ->
+        val channels = settings.getJSONArray("hiddenChannels")
+        (0 until channels.length()).map { channels.getString(it) }.toSet()
+    }
+    suspend fun saveMuted(channels: Set<String>) = saveValue("hiddenChannels", JSONArray(channels.toList()))
+    suspend fun read(): String = readValue { it.getString("address") }
+    suspend fun save(address: String) = saveValue("address", address)
 }

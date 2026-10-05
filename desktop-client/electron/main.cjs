@@ -1,10 +1,10 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, shell, clipboard, dialog } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, shell, clipboard, dialog, systemPreferences } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { format } = require('node:util');
 const squirrelEvent = process.platform === 'win32' && require('electron-squirrel-startup');
-let window, tray, desktop, envPath, configModule, quitting = false, restarting = false;
+let window, tray, desktop, configPath, configModule, quitting = false, restarting = false;
 const logs = [];
 for (const level of ['log', 'warn', 'error']) {
   const original = console[level].bind(console);
@@ -14,24 +14,46 @@ for (const level of ['log', 'warn', 'error']) {
     if (logs.length > 500) logs.shift();
   };
 }
+let permissionStatus = { trusted: false, helperPath: '', message: 'Checking keyboard helper permissions…' };
+let permissionCheck;
+let lastPermissionCheck = 0;
+function accessibilityTrusted() {
+  return process.platform !== 'darwin' || (systemPreferences.isTrustedAccessibilityClient(false) && permissionStatus.trusted);
+}
+async function checkAccessibility(request = false) {
+  if (process.platform !== 'darwin') return;
+  if (permissionCheck) { await permissionCheck; if (request) return checkAccessibility(true); return; }
+  permissionCheck = (async () => {
+    try {
+      const helper = await import(pathToFileURL(path.join(__dirname, '../dist/zomboid/macGameInput.js')).href);
+      permissionStatus = { ...await helper.macInputPermissions(request), message: '' };
+    } catch (error) {
+      permissionStatus = { trusted: false, helperPath: '', message: 'Could not check keyboard helper permissions: ' + error.message };
+    } finally { lastPermissionCheck = Date.now(); }
+  })();
+  try { await permissionCheck; } finally { permissionCheck = undefined; }
+}
+async function requestAccessibility() {
+  if (process.platform !== 'darwin') return;
+  if (!systemPreferences.isTrustedAccessibilityClient(false)) systemPreferences.isTrustedAccessibilityClient(true);
+  await checkAccessibility(true);
+}
 function showWindow() { if (window) { window.show(); window.focus(); } }
 async function startClient() {
   const { startDesktop } = await import(pathToFileURL(path.join(__dirname, '../dist/desktop.js')).href);
-  const settings = configModule.loadConfig(envPath);
-  desktop = startDesktop(settings, false, async text => {
-    clipboard.writeText(text);
-    if (clipboard.readText() !== text) throw new Error('Clipboard verification failed');
-  });
+  const settings = configModule.loadConfig(configPath);
+  const { createVerifiedClipboardCopy, copyText } = await import(pathToFileURL(path.join(__dirname, '../dist/clipboard/clipboard.js')).href);
+  desktop = startDesktop(settings, false, process.platform === 'darwin' ? copyText : createVerifiedClipboardCopy(clipboard), path.dirname(configPath));
 }
+if (!app.isPackaged) app.setPath('userData', path.join(app.getPath('userData'), 'development'));
 if (squirrelEvent || !app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', showWindow);
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.squirrel.MeowLingo.MeowLingo');
-    envPath = path.join(app.getPath('userData'), '.env');
-    if (!fs.existsSync(envPath)) fs.copyFileSync(app.isPackaged ? path.join(process.resourcesPath, '.env.example') : path.join(__dirname, '../.env.example'), envPath);
-    fs.chmodSync(envPath, 0o600);
-    process.env.MEOWLINGO_ENV_FILE = envPath;
+    configPath = app.isPackaged ? path.join(app.getPath('userData'), 'config.json') :
+      (process.env.MEOWLINGO_CONFIG_FILE || path.join(__dirname, '../config.json'));
+    process.env.MEOWLINGO_CONFIG_FILE = configPath;
     if (app.isPackaged && process.platform === 'darwin') process.env.MEOWLINGO_MAC_HELPER = path.join(process.resourcesPath, 'meowlingo-game-input');
     configModule = await import(pathToFileURL(path.join(__dirname, '../dist/config.js')).href);
     tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'assets/tray.png')).resize({ width: 20, height: 20 }));
@@ -44,6 +66,7 @@ else {
     window.webContents.on('will-navigate', event => event.preventDefault());
     window.on('close', event => { if (!quitting) { event.preventDefault(); window.hide(); } });
     await window.loadFile(path.join(__dirname, 'index.html'));
+    if (configModule.loadConfig(configPath).MEOWLINGO_AUTO_SEND) void requestAccessibility();
     try { await startClient(); } catch (error) { console.error('Client startup failed:', error.message); }
   }).catch(error => { dialog.showErrorBox('MeowLingo startup failed', error.message); app.quit(); });
   app.on('activate', showWindow);
@@ -54,21 +77,36 @@ else {
     Promise.resolve(desktop?.stop()).catch(error => console.error(error.message)).finally(() => app.quit());
   });
 }
-ipcMain.handle('snapshot', () => ({ logs, clients: desktop?.server.clients.size ?? 0, running: !!desktop?.server.address(), envPath }));
+ipcMain.handle('snapshot', () => {
+  if (process.platform === 'darwin' && !permissionCheck && Date.now() - lastPermissionCheck > 5000) void checkAccessibility();
+  return ({ logs, clients: desktop?.server.clients.size ?? 0, running: !!desktop?.server.address(), accessibilityTrusted: accessibilityTrusted(), requiresAccessibility: process.platform === 'darwin', permissionHelperPath: permissionStatus.helperPath, permissionMessage: permissionStatus.message, configPath });
+});
 ipcMain.handle('settings', () => {
-  const settings = configModule.loadConfig(envPath);
-  return { TRANSLATOR_PROVIDER: settings.TRANSLATOR_PROVIDER, OPENAI_MODEL: settings.OPENAI_MODEL, OPENAI_API_KEY: settings.OPENAI_API_KEY ?? '', MEOWLINGO_PORT: String(settings.MEOWLINGO_PORT), MEOWLINGO_LOG_DIR: settings.MEOWLINGO_LOG_DIR, MEOWLINGO_HISTORY_COUNT: String(settings.MEOWLINGO_HISTORY_COUNT), MEOWLINGO_AUTO_SEND: String(settings.MEOWLINGO_AUTO_SEND) };
+  const settings = configModule.loadConfig(configPath);
+  return { TRANSLATOR_PROVIDER: settings.TRANSLATOR_PROVIDER, OPENAI_MODEL: settings.OPENAI_MODEL, OPENAI_API_KEY: settings.OPENAI_API_KEY ?? '', MEOWLINGO_PORT: String(settings.MEOWLINGO_PORT), MEOWLINGO_LOG_DIR: settings.MEOWLINGO_LOG_DIR, MEOWLINGO_HISTORY_COUNT: String(settings.MEOWLINGO_HISTORY_COUNT), MEOWLINGO_INPUT_MODE: settings.MEOWLINGO_INPUT_MODE, MEOWLINGO_AUTO_SEND: String(settings.MEOWLINGO_AUTO_SEND), instructions: settings.instructions };
 });
 ipcMain.handle('save-settings', async (_event, values) => {
   if (restarting) throw new Error('Client restart already in progress');
-  const allowed = ['TRANSLATOR_PROVIDER', 'OPENAI_MODEL', 'OPENAI_API_KEY', 'MEOWLINGO_PORT', 'MEOWLINGO_LOG_DIR', 'MEOWLINGO_HISTORY_COUNT', 'MEOWLINGO_AUTO_SEND'];
-  const dotenv = await import('dotenv');
-  const settings = dotenv.parse(fs.readFileSync(envPath));
-  for (const key of allowed) { if (typeof values?.[key] !== 'string' || /[\r\n]/.test(values[key])) throw new Error('Invalid setting'); settings[key] = values[key]; }
-  configModule.configSchema.parse(settings);
-  const text = Object.entries(settings).map(([key, value]) => `${key}=${value.includes("'") ? (value.includes('`') ? (() => { throw new Error('Setting contains unsupported quote characters'); })() : '`' + value + '`') : "'" + value + "'"}`).join('\n') + '\n';
-  fs.writeFileSync(envPath, text, { mode: 0o600 });
+  const allowed = ['TRANSLATOR_PROVIDER', 'OPENAI_MODEL', 'OPENAI_API_KEY', 'MEOWLINGO_PORT', 'MEOWLINGO_LOG_DIR', 'MEOWLINGO_HISTORY_COUNT', 'MEOWLINGO_AUTO_SEND', 'MEOWLINGO_INPUT_MODE', 'instructions'];
+  const settings = configModule.loadConfig(configPath);
+  for (const key of allowed) {
+    if (typeof values?.[key] !== 'string' || (key !== 'instructions' && /[\r\n]/.test(values[key]))) throw new Error('Invalid setting');
+    settings[key] = values[key];
+  }
+  const saved = configModule.saveConfig(configPath, settings);
+  if (saved.MEOWLINGO_AUTO_SEND) void requestAccessibility();
   restarting = true;
   try { await desktop?.stop(); desktop = undefined; await startClient(); } finally { restarting = false; }
 });
-ipcMain.handle('open-config', () => shell.showItemInFolder(envPath));
+ipcMain.handle('open-config', () => shell.showItemInFolder(configPath));
+
+ipcMain.handle('accessibility-settings', async () => {
+  if (process.platform !== 'darwin') return;
+  void requestAccessibility();
+  await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+});
+
+ipcMain.handle('clear-translation-cache', () => {
+  if (restarting || !desktop) throw new Error('Client is not ready. Try again shortly.');
+  desktop.clearTranslationCache();
+});

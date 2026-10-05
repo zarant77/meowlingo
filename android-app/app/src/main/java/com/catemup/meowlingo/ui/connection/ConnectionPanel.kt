@@ -14,10 +14,20 @@ import com.catemup.meowlingo.domain.DesktopEndpoint
 @Composable
 fun ConnectionPanel(state: ChatState, onAddress: (String) -> Unit, onConnect: () -> Unit,
     onDisconnect: () -> Unit, onEnableNotifications: () -> Unit, onFindDesktop: () -> Unit,
+    onTheme: (String) -> Unit,
     onChannelColor: (String, String) -> Unit,
     onAutoConnect: (Boolean) -> Unit, onSelectDesktop: (DesktopEndpoint) -> Unit) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("App settings", style = MaterialTheme.typography.headlineSmall)
+        Text("Changes are saved automatically in this app's private config.json. Configure OpenAI on your desktop.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Theme", style = MaterialTheme.typography.titleMedium)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("light" to "Light", "dark" to "Dark", "system" to "Device theme").forEach { (value, label) ->
+                FilterChip(selected = state.theme == value, onClick = { onTheme(value) }, label = { Text(label) })
+            }
+        }
         ChannelColorSettings(state.channelColors, onChannelColor)
         HorizontalDivider()
         Text("Desktop connection", style = MaterialTheme.typography.headlineSmall)
