@@ -53,7 +53,7 @@ jobs:
             ./gradlew assembleDebug
           fi
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: android-apk
           path: dist/*.apk
@@ -126,7 +126,7 @@ jobs:
         if: always() && runner.os == 'macOS'
         run: node scripts/mac-signing-ci.mjs --cleanup
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/*
@@ -141,7 +141,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
