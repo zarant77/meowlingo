@@ -38,6 +38,7 @@ data class ChatState(
     val theme: String = "system",
     val channelColors: Map<String, String> = emptyMap(),
     val hiddenChannels: Set<String> = emptySet(),
+    val notificationChannels: Set<String> = setOf("Whisper"),
     val error: String? = null,
 )
 
@@ -52,6 +53,21 @@ class ChatSession private constructor(context: Context) {
     private var desiredAddress: String? = null
     private var editedAddress = false
     private var editedMutes = false
+    private var editedNotifications = false
+    private var notificationPreferencesReady = false
+    private var notificationSaveJob: Job? = null
+    fun toggleNotificationChannel(channel: String) {
+        if (channel.isBlank()) return
+        editedNotifications = true
+        notificationPreferencesReady = true
+        mutable.update { it.copy(notificationChannels = if (channel in it.notificationChannels) it.notificationChannels - channel else it.notificationChannels + channel) }
+        val channels = state.value.notificationChannels
+        notificationSaveJob?.cancel()
+        notificationSaveJob = scope.launch {
+            try { store.saveNotificationChannels(channels) }
+            catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not save notification channels") }
+        }
+    }
     private var editedDiscovery = false
     private var autoSaveJob: Job? = null
     private var muteJob: Job? = null
@@ -79,6 +95,7 @@ class ChatSession private constructor(context: Context) {
         if (language !in com.catemup.meowlingo.config.translationLanguages) return
         editedLanguage = true
         mutable.update { it.copy(targetLanguage = language) }
+        notifications.updateLanguage(language)
         if (state.value.status == "Connected") socket.setTargetLanguage(language)
         languageSaveJob?.cancel()
         languageSaveJob = scope.launch {
@@ -113,6 +130,13 @@ class ChatSession private constructor(context: Context) {
     }
     init {
         scope.launch {
+            try {
+                val channels = store.readNotificationChannels()
+                if (!editedNotifications) mutable.update { it.copy(notificationChannels = channels) }
+                notificationPreferencesReady = true
+            } catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not load notification channels") }
+        }
+        scope.launch {
             try { val language = store.readChatLanguage(); if (!editedChatLanguage) mutable.update { it.copy(chatLanguage = language) } }
             catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not load chat language") }
         }
@@ -121,6 +145,7 @@ class ChatSession private constructor(context: Context) {
                 val language = store.readTargetLanguage()
                 if (!editedLanguage) {
                     mutable.update { it.copy(targetLanguage = language) }
+                    notifications.updateLanguage(language)
                     if (state.value.status == "Connected") socket.setTargetLanguage(language)
                 }
             } catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not load translation language") }
@@ -295,7 +320,7 @@ class ChatSession private constructor(context: Context) {
                 val read = message.replayed || visible && entriesAtBottom && matches(entry)
                 val merged = mergeChatHistory(state.value.entries, entry.copy(unread = !read), message.replayed)
                 mutable.update { it.copy(entries = merged.entries) }
-                if (merged.added && !merged.historical && !visible && entry.channel !in state.value.hiddenChannels) notifications.message(entry)
+                if (notificationPreferencesReady && shouldNotify(entry.channel, state.value.notificationChannels, visible, merged.added, merged.historical)) notifications.message(entry)
 
             }
             "status" -> if (message.status == "connected") mutable.update { it.copy(historyLimit = (message.historyLimit ?: 10).coerceIn(1, 500)) } else mutable.update { it.copy(sourceState = message.status.orEmpty(), sourceStatus = message.message.orEmpty()) }

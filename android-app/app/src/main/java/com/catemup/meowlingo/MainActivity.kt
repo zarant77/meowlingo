@@ -9,6 +9,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.SystemBarStyle
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import com.catemup.meowlingo.config.LocalUiLanguage
+import com.catemup.meowlingo.config.localizedContext
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.catemup.meowlingo.ui.theme.LocalDarkTheme
@@ -29,14 +35,20 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("channel")?.let { ChatSession.get(this).selectChannel(it) }
         setContent {
             val state by model.state.collectAsStateWithLifecycle()
-            MeowLingoTheme(state.theme) {
-                val dark = LocalDarkTheme.current
-                SideEffect {
-                    val style = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
-                        else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
-                    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            val context = LocalContext.current
+            val localized = remember(context, state.targetLanguage) { localizedContext(context, state.targetLanguage) }
+            CompositionLocalProvider(LocalContext provides localized,
+                LocalConfiguration provides localized.resources.configuration,
+                LocalUiLanguage provides com.catemup.meowlingo.config.appLanguage(state.targetLanguage)) {
+                MeowLingoTheme(state.theme) {
+                    val dark = LocalDarkTheme.current
+                    SideEffect {
+                        val style = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                            else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+                        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                    }
+                    ChatScreen(model, onEnableNotifications = ::enableNotifications, onRequestNotifications = ::requestNotifications)
                 }
-                ChatScreen(model, onEnableNotifications = ::enableNotifications, onRequestNotifications = ::requestNotifications)
             }
         }
     }

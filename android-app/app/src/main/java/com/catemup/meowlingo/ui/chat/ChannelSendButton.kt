@@ -1,5 +1,6 @@
 package com.catemup.meowlingo.ui.chat
 
+import com.catemup.meowlingo.config.uiText
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
@@ -96,13 +97,13 @@ fun ChannelSendButton(channel: String, enabled: Boolean, onSelect: (String) -> U
             modifier = Modifier.size(56.dp).then(
                 if (!enabled) Modifier.border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)
                     .border(1.dp, channelColor, CircleShape)
-                else Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))) { Icon(Icons.AutoMirrored.Filled.Send, "Send; hold and slide to choose a channel") }
+                else Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))) { Icon(Icons.AutoMirrored.Filled.Send, uiText("Send; hold and slide to choose a channel")) }
     }
-    if (whisperDialog) AlertDialog(onDismissRequest = { whisperDialog = false }, title = { Text("Private message") },
-        text = { OutlinedTextField(recipient, { recipient = it }, label = { Text("Recipient nickname") }, singleLine = true) },
+    if (whisperDialog) AlertDialog(onDismissRequest = { whisperDialog = false }, title = { Text(uiText("Private message")) },
+        text = { OutlinedTextField(recipient, { recipient = it }, label = { Text(uiText("Recipient nickname")) }, singleLine = true) },
         confirmButton = { TextButton(enabled = recipient.isNotBlank() && recipient.none { it == '"' || it == '\n' || it == '\r' },
-            onClick = { whisperDialog = false; onRecipient(recipient.trim()); if (canSendLatest) sendLatest(recipient.trim()) }) { Text("Send whisper") } },
-        dismissButton = { TextButton(onClick = { whisperDialog = false }) { Text("Cancel") } })
+            onClick = { whisperDialog = false; onRecipient(recipient.trim()); if (canSendLatest) sendLatest(recipient.trim()) }) { Text(uiText("Send whisper")) } },
+        dismissButton = { TextButton(onClick = { whisperDialog = false }) { Text(uiText("Cancel")) } })
 }
 
 @Composable

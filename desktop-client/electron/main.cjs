@@ -65,7 +65,7 @@ else {
   });
 }
 ipcMain.handle('snapshot', () => {
-  return ({ logs, clients: desktop?.server.clients.size ?? 0, running: !!desktop?.server.address(), accessibilityTrusted: accessibilityTrusted(), requiresAccessibility: process.platform === 'darwin', permissionMessage: permissionStatus.message, configPath });
+  return ({ version: app.getVersion(), logs, clients: desktop?.server.clients.size ?? 0, running: !!desktop?.server.address(), accessibilityTrusted: accessibilityTrusted(), requiresAccessibility: process.platform === 'darwin', permissionMessage: permissionStatus.message, configPath });
 });
 ipcMain.handle('settings', () => {
   const settings = configModule.loadConfig(configPath);

@@ -19,11 +19,13 @@ class ChatConnectionService : Service() {
         super.onCreate()
         session = ChatSession.get(this)
         notifications = ChatNotifications(this)
+        notifications.updateLanguage(session.state.value.targetLanguage)
         val notification = notifications.connection("Connecting")
         if (Build.VERSION.SDK_INT >= 34) startForeground(ChatNotifications.CONNECTION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
         else startForeground(ChatNotifications.CONNECTION_ID, notification)
         scope.launch {
-            session.state.map { it.status }.distinctUntilChanged().collect { status ->
+            session.state.map { it.status to it.targetLanguage }.distinctUntilChanged().collect { (status, language) ->
+                notifications.updateLanguage(language)
                 val manager = getSystemService(android.app.NotificationManager::class.java)
                 if (manager.areNotificationsEnabled()) manager.notify(ChatNotifications.CONNECTION_ID, notifications.connection(status))
             }

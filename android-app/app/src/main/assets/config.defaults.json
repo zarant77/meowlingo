@@ -4,6 +4,7 @@
   "preferredDesktop": null,
   "whisperRecipient": "",
   "hiddenChannels": [],
+  "notificationChannels": ["Whisper"],
   "channelColors": {},
   "theme": "system",
   "targetLanguage": "uk",

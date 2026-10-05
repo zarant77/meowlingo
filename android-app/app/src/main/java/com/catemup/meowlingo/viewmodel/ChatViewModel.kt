@@ -65,6 +65,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun setTargetLanguage(language: String) = session.setTargetLanguage(language)
     fun setTheme(theme: String) = session.setTheme(theme)
     fun setChannelColor(channel: String, color: String) = session.setChannelColor(channel, color)
+    fun toggleNotificationChannel(channel: String) = session.toggleNotificationChannel(channel)
     fun toggleChannel(channel: String) = session.toggleChannel(channel)
     fun explain(id: String) = session.explain(id)
     fun dismissError() = session.error(null)

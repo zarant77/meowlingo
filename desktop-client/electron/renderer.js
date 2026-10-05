@@ -15,7 +15,7 @@ document.getElementById('accessibility-settings').onclick = async () => {
   catch (error) { result.textContent = error.message; }
 };
 async function refresh() {
-  try { const data = await window.meowlingo.snapshot(); document.getElementById('status').textContent = `${data.running ? 'Running' : 'Stopped'} · ${data.clients} connected phone(s)`;
+  try { const data = await window.meowlingo.snapshot(); document.getElementById('app-title').textContent = `MeowLingo v${data.version}`; document.getElementById('status').textContent = `${data.running ? 'Running' : 'Stopped'} · ${data.clients} connected phone(s)`;
     document.getElementById('accessibility-warning').hidden = !data.requiresAccessibility || data.accessibilityTrusted;
     document.getElementById('permission-details').textContent = data.permissionMessage || '';
     const logs = document.getElementById('logs'); const bottom = logs.scrollHeight - logs.scrollTop - logs.clientHeight < 30;

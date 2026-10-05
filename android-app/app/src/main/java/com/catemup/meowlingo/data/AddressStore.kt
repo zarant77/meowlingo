@@ -93,6 +93,11 @@ class AddressStore(private val context: Context) {
     suspend fun readAutoConnect(): Boolean = readValue { it.getBoolean("autoConnect") }
     suspend fun savePreferredDesktop(id: String) = saveValue("preferredDesktop", id)
     suspend fun saveAutoConnect(enabled: Boolean) = saveValue("autoConnect", enabled)
+    suspend fun readNotificationChannels(): Set<String> = readValue { settings ->
+        val channels = settings.optJSONArray("notificationChannels") ?: JSONArray(listOf("Whisper"))
+        (0 until channels.length()).map { channels.getString(it) }.toSet()
+    }
+    suspend fun saveNotificationChannels(channels: Set<String>) = saveValue("notificationChannels", JSONArray(channels.sorted()))
     suspend fun readMuted(): Set<String> = readValue { settings ->
         val channels = settings.getJSONArray("hiddenChannels")
         (0 until channels.length()).map { channels.getString(it) }.toSet()
