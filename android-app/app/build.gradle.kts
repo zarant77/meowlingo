@@ -11,8 +11,8 @@ android {
         applicationId = "com.catemup.meowlingo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.1.3"
+        versionCode = 5
+        versionName = "0.1.4"
     }
     val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")
     if (!releaseKeystore.isNullOrBlank()) {
