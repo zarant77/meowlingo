@@ -67,6 +67,14 @@ class AddressStore(private val context: Context) {
         } }
     }
 
+    suspend fun readChatLanguage(): String = readValue {
+        it.optString("chatLanguage", "en").takeIf { language -> language in com.catemup.meowlingo.config.translationLanguages } ?: "en"
+    }
+    suspend fun saveChatLanguage(language: String) = saveValue("chatLanguage", language)
+    suspend fun readTargetLanguage(): String = readValue {
+        it.optString("targetLanguage", "uk").takeIf { language -> language in com.catemup.meowlingo.config.translationLanguages } ?: "uk"
+    }
+    suspend fun saveTargetLanguage(language: String) = saveValue("targetLanguage", language)
     suspend fun readTheme(): String = readValue {
         it.optString("theme", "system").takeIf { theme -> theme in setOf("system", "light", "dark") } ?: "system"
     }

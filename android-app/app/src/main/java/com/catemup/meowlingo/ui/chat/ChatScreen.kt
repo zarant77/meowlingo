@@ -154,7 +154,7 @@ fun ChatScreen(model: ChatViewModel, onEnableNotifications: () -> Unit, onReques
         ConnectionPanel(state, model::address,
             onConnect = { if (model.connect()) { settings = false; onRequestNotifications() } },
             onDisconnect = model::disconnect, onEnableNotifications = onEnableNotifications,
-            onTheme = model::setTheme, onChannelColor = model::setChannelColor,
+            onChatLanguage = model::setChatLanguage, onTargetLanguage = model::setTargetLanguage, onTheme = model::setTheme, onChannelColor = model::setChannelColor,
             onFindDesktop = model::findDesktop, onAutoConnect = model::setAutoConnect,
             onSelectDesktop = { if (model.connectToDesktop(it)) { settings = false; onRequestNotifications() } })
     }

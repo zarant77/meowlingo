@@ -4,10 +4,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 
 @Serializable
-data class Reply(val id: String, val text: String, val type: String = "reply", val channel: String? = null, val recipient: String? = null)
+data class Reply(val id: String, val text: String, val type: String = "reply", val channel: String? = null, val recipient: String? = null, val targetLanguage: String = "en")
 
 @Serializable
 data class ServerMessage(
+    val targetLanguage: String? = null,
     val explanation: String? = null,
     val error: String? = null,
     val type: String,

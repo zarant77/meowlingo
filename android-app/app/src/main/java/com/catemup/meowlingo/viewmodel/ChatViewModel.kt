@@ -61,6 +61,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun address(value: String) { session.pauseAutoConnect(); session.address(value) }
     fun search(value: String) = session.search(value)
     fun selectChannel(channel: String?) = session.selectChannel(channel)
+    fun setChatLanguage(language: String) = session.setChatLanguage(language)
+    fun setTargetLanguage(language: String) = session.setTargetLanguage(language)
     fun setTheme(theme: String) = session.setTheme(theme)
     fun setChannelColor(channel: String, color: String) = session.setChannelColor(channel, color)
     fun toggleChannel(channel: String) = session.toggleChannel(channel)

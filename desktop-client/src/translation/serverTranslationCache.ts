@@ -21,6 +21,7 @@ export class ServerTranslationCache {
       translation TEXT,
       explanation TEXT
     )`);
+    this.database.exec(`CREATE TABLE IF NOT EXISTS language_translations (original TEXT NOT NULL, language TEXT NOT NULL, translation TEXT NOT NULL, PRIMARY KEY(original, language))`);
     // Preserve translations from the previous schema. Hashed explanations cannot be mapped back.
     const legacy = this.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'translations'").get();
     this.database.exec('BEGIN');
@@ -35,6 +36,23 @@ export class ServerTranslationCache {
   async translate(message: Pick<IncomingChatMessage, 'author' | 'channel' | 'text'>, translate: (text: string) => Promise<string>): Promise<string> {
     if (!isServerMessage(message)) return translate(message.text);
     return this.cached('translation', message.text, () => translate(message.text));
+  }
+
+  async translateLanguage(message: Pick<IncomingChatMessage, 'author' | 'channel' | 'text'>, language: string, translate: (text: string) => Promise<string>): Promise<string> {
+    if (language === 'uk') return this.translate(message, translate);
+    if (!isServerMessage(message)) return translate(message.text);
+    const row = this.database.prepare('SELECT translation FROM language_translations WHERE original = ? AND language = ?').get(message.text, language);
+    if (typeof row?.translation === 'string') return row.translation;
+    const key = JSON.stringify(['language', language, message.text]);
+    const existing = this.pending.get(key);
+    if (existing) return existing;
+    const generation = this.generation;
+    const job = Promise.resolve().then(() => translate(message.text)).then(result => {
+      if (generation === this.generation && result.trim()) this.database.prepare('INSERT OR REPLACE INTO language_translations VALUES (?, ?, ?)').run(message.text, language, result);
+      return result;
+    });
+    this.pending.set(key, job);
+    try { return await job; } finally { if (this.pending.get(key) === job) this.pending.delete(key); }
   }
 
   explain(message: ContextMessage, previous: ContextMessage[], explain: ContextExplainer): Promise<string> {
@@ -67,7 +85,7 @@ export class ServerTranslationCache {
   }
 
   clear(): void {
-    this.database.exec('DELETE FROM server_messages;');
+    this.database.exec('DELETE FROM server_messages; DELETE FROM language_translations;');
     this.generation++;
     this.pending.clear();
     this.database.exec('VACUUM');

@@ -34,6 +34,13 @@ probe.listen(0, '127.0.0.1', () => {
           const permissions = await window.webContents.executeJavaScript('window.meowlingo.snapshot()');
           assert.equal(await window.webContents.executeJavaScript("document.getElementById('accessibility-warning').hidden"), permissions.accessibilityTrusted);
         }
+        if (process.platform === 'darwin') {
+          const native = require('../native/game-input-' + process.arch + '.node');
+          assert.equal(typeof native.permissions(false), 'boolean');
+          // This text is never copied: clipboard verification prevents keyboard events.
+          const guarded = await native.send('MeowLingo native guard smoke check', 'paste');
+          assert(['failed', 'not_focused'].includes(guarded.gameSendStatus));
+        }
         const settings = await window.webContents.executeJavaScript('window.meowlingo.settings()');
         assert.equal(settings.TRANSLATOR_PROVIDER, 'mock');
         assert(fs.existsSync(path.join(profile, 'config.json')));

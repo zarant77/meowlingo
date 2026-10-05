@@ -203,7 +203,6 @@ Replies use the selected translator before copying to the desktop clipboard; `or
 
 Before pasting, the desktop selects existing chat input with Ctrl+A because Zomboid can remember the previous channel command ([game chat documentation](https://theindiestone.com/forums/topic/24509-new-chat-system/)). No game acknowledgement is available; test keyboard sending while stationary with chat closed.
 
-macOS keyboard input uses a small Core Graphics helper, compiled and cached under `~/Library/Caches/MeowLingo` on first use. Install Xcode Command Line Tools if compilation is unavailable (`xcode-select --install`). Enable Accessibility for the terminal/client launcher or the exact helper path printed in the console, then restart the client. Each reply logs `Reply delivery` with clipboard status, keyboard status and a diagnostic message. Keyboard events hold each key for 100 ms and check foreground focus between steps.
 
 ## OpenAI translation
 
@@ -214,7 +213,7 @@ CLI (`npm run dev` / `npm start`) creates `desktop-client/config.json` automatic
 
 The [official OpenAI JavaScript SDK](https://developers.openai.com/api/docs/libraries) calls the Responses API with a 15-second timeout per attempt and at most two SDK retries for transient failures. Failed, empty or incomplete translations are logged without credentials and return the original text. Incoming chat is translated to natural Ukrainian; replies to English. Prompts preserve nicknames, URLs, numbers, place names and Project Zomboid terms and request only the translation. Messages are sent to OpenAI only when this provider is enabled; response storage is disabled. Automated tests simulate the API; account/model access must be checked with your own key.
 
-On macOS, both Typing and Paste settings use T, Ctrl+A, direct Unicode text events, Enter. Ctrl+V is not used for automatic input on macOS. This bypasses Project Zomboid's cached clipboard, which can paste an older message even when the system clipboard is correct. The desktop still copies the channel-prefixed reply for manual pasting. Validate this input method in your game; keyboard events are not a delivery acknowledgement.
+On macOS, Typing uses direct Unicode text and Paste uses Ctrl+V, both via CGEvent in the MeowLingo process. Each sequence opens chat with T and finishes with Enter. This bypasses Project Zomboid's cached clipboard, which can paste an older message even when the system clipboard is correct. The desktop still copies the channel-prefixed reply for manual pasting. Validate this input method in your game; keyboard events are not a delivery acknowledgement.
 
 Android channel colors can be edited under Settings → Channel colors using #RRGGBB values, with Save and Reset controls. Changes persist between launches and apply to filter buttons, send-channel menu rows and message bubbles. Text automatically uses a contrasting color. Defaults in `android-app/app/src/main/java/com/catemup/meowlingo/config/AppSettings.kt` are /say white, /all dark orange, /faction pink, /safehouse dark green, /yell red and /whisper purple. Unknown channels receive a stable generated color. Bubbles show the author and time above the message; the channel is indicated by color.
 
@@ -239,10 +238,10 @@ Build an installer on the target operating system:
 npm run desktop:make
 ```
 
-macOS produces an `.app`, a ZIP and an installable DMG under `desktop-client/out/`; drag MeowLingo into Applications. Windows produces `MeowLingo-Setup.exe`. Builds include their own Electron/Node runtime. The macOS keyboard helper is compiled during packaging and included as a resource; end users do not need Xcode. App settings, the OpenAI key and context explanation instructions are saved together in a private user `config.json`, accessible with **Show config.json**. The packaged app excludes your local config and legacy .env. On macOS the file is under `~/Library/Application Support/MeowLingo/config.json`; on Windows, under `%APPDATA%/MeowLingo/config.json`. CLI uses `desktop-client/config.json`. Desktop `config.example.json` contains only default instructions; other defaults come from the config schema.
+macOS produces an `.app`, a ZIP and an installable DMG under `desktop-client/out/`; drag MeowLingo into Applications. Windows produces `MeowLingo-Setup.exe`. Builds include their own Electron/Node runtime. The macOS native Node-API module is compiled for arm64 and x64 and loaded in the main MeowLingo process; end users do not need Xcode. App settings, the OpenAI key and context explanation instructions are saved together in a private user `config.json`, accessible with **Show config.json**. The packaged app excludes your local config and legacy .env. On macOS the file is under `~/Library/Application Support/MeowLingo/config.json`; on Windows, under `%APPDATA%/MeowLingo/config.json`. CLI uses `desktop-client/config.json`. Desktop `config.example.json` contains only default instructions; other defaults come from the config schema.
 
 
-On macOS, grant Accessibility to the installed app or the included `MeowLingo.app/Contents/Resources/meowlingo-game-input` helper when automatic input reports missing permission. Test keyboard input with Zomboid foreground and chat closed.
+On macOS, grant Accessibility only to the installed MeowLingo.app. Development builds use Electron. Test keyboard input with Zomboid foreground and chat closed.
 
 ## GitHub release builds
 
@@ -297,7 +296,6 @@ Android Settings → Theme offers Light, Dark and Device theme (default). Select
 
 On macOS the desktop requests Accessibility on its first launch with automatic input enabled. A warning stays visible while permission is missing, with a button to open the correct System Settings page. Enable MeowLingo (Electron in development) and restart the client. macOS requires the user to grant the permission; clipboard functionality remains available without it.
 
-The macOS warning checks both Electron Accessibility and the actual keyboard helper's Accessibility/event-posting access. The helper requests its own permissions at startup, and the UI shows its path if it needs to be added separately. Permission checks never type or send a message.
 
 Incoming messages and initial history are delivered immediately as original text. Translation runs in the background (up to three requests at once) and updates the same message without duplicates or new notifications. Historical timestamps are preserved.
 
@@ -306,3 +304,9 @@ Server announcements are cached locally in `translation-cache.sqlite` beside the
 The previous two-table cache is migrated automatically: translations are preserved, while hashed explanation entries that cannot be linked to original messages are discarded.
 
 Application artwork comes from the root `icon-source.png`. On macOS, run `node scripts/generate-icons.mjs` after replacing it, then commit the generated Android and desktop assets. Release builds use these generated assets directly, without image conversion dependencies.
+
+macOS release signing uses Hardened Runtime and preserves bundle ID `com.catemup.meowlingo.desktop`. GitHub Secrets: `MAC_CERTIFICATE_BASE64` (Developer ID Application certificate plus private key exported as .p12, base64), `MAC_CERTIFICATE_PASSWORD` (.p12 password), `MAC_SIGNING_IDENTITY` (full Developer ID Application identity), `APPLE_API_KEY_BASE64` (App Store Connect team .p8 API key, base64), `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`. CI imports a temporary keychain, signs the app and native module, notarizes/staples the app and DMG, verifies codesign and removes credentials. Without credentials, local/CI builds are ad-hoc signed and are not notarized. Only these ad-hoc builds disable library validation so Electron Framework can load without a Team ID; Developer ID builds retain library validation. Accessibility identity stability across updates requires the same Developer ID identity.
+
+Release validation on a Mac: install the app into Applications, launch from Finder, enable MeowLingo once in Privacy & Security > Accessibility, relaunch and send an Android reply while Project Zomboid is foreground with chat closed. Confirm the actual message appears; `keys_sent` means events were issued, not game delivery. Paste may read stale game-internal clipboard contents; Typing remains available as a fallback. Validate on Intel and Apple Silicon. No helper permission or end-user compiler is required.
+
+In Android App settings, choose **Native language** for incoming messages and **Chat language** for your outgoing messages. Both dropdowns offer 27 European languages and save your selection. Defaults are Ukrainian for incoming messages and English for outgoing messages. Changing the native language retranslates retained desktop history immediately. Update both desktop and Android clients to use this feature.

@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { translationLanguages, type TranslationLanguage } from './languages.js';
 import type { Translator } from './translator.js';
 
 export class OpenAITranslator implements Translator {
@@ -6,6 +7,8 @@ export class OpenAITranslator implements Translator {
   constructor(apiKey: string, private readonly model: string, options: { fetch?: typeof fetch } = {}) {
     this.client = new OpenAI({ apiKey, timeout: 15000, maxRetries: 2, ...options });
   }
+  translateToLanguage(text: string, language: TranslationLanguage): Promise<string> { return this.translate(text, translationLanguages[language]); }
+  translateToLanguageForCache(text: string, language: TranslationLanguage): Promise<string> { return this.translate(text, translationLanguages[language], true); }
   translateToUkrainian(text: string): Promise<string> { return this.translate(text, 'Ukrainian'); }
   translateToUkrainianForCache(text: string): Promise<string> { return this.translate(text, 'Ukrainian', true); }
   translateToEnglish(text: string): Promise<string> { return this.translate(text, 'English'); }

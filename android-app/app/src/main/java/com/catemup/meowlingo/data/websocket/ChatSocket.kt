@@ -5,6 +5,7 @@ import com.catemup.meowlingo.data.model.ServerMessage
 import com.catemup.meowlingo.data.model.decodeServerMessage
 import com.catemup.meowlingo.data.model.encodeReply
 import okhttp3.*
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.util.concurrent.TimeUnit
 
 class ChatSocket {
@@ -12,10 +13,10 @@ class ChatSocket {
     private var socket: WebSocket? = null
     @Volatile private var generation = 0
 
-    fun connect(address: String, onStatus: (String) -> Unit, onMessage: (ServerMessage) -> Unit, onError: (String) -> Unit) {
+    fun connect(address: String, targetLanguage: String, onStatus: (String) -> Unit, onMessage: (ServerMessage) -> Unit, onError: (String) -> Unit) {
         disconnect()
         val token = generation
-        socket = client.newWebSocket(Request.Builder().url(address).build(), object : WebSocketListener() {
+        socket = client.newWebSocket(Request.Builder().url(address.replaceFirst("ws://", "http://").replaceFirst("wss://", "https://").toHttpUrl().newBuilder().setQueryParameter("targetLanguage", targetLanguage).build()).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (token == generation) onStatus("Connected")
             }
@@ -38,6 +39,8 @@ class ChatSocket {
             }
         })
     }
+    fun setTargetLanguage(language: String): Boolean = socket?.send(
+        org.json.JSONObject().put("type", "settings").put("targetLanguage", language).toString()) ?: false
     fun explain(id: String): Boolean = socket?.send(
         org.json.JSONObject().put("type", "explain").put("id", id).toString()) ?: false
     fun send(reply: Reply): Boolean = socket?.send(encodeReply(reply)) ?: false

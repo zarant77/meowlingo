@@ -228,3 +228,47 @@ test('replays originals immediately and later updates the same messages while tr
   assert(updates.every(chat => chat.translated === 'UA: ' + chat.original));
   assert(maximum <= 3);
 });
+
+ test('each client selects its language and changing it retranslates history', async t => {
+  const app = createServer('127.0.0.1', 0, {
+    translateToUkrainian: async text => 'uk: ' + text,
+    translateToLanguage: async (text, language) => language + ': ' + text,
+    translateToEnglish: async text => text,
+  }, async () => {});
+  t.after(() => app.close()); await once(app.server, 'listening');
+  const address = app.server.address(); assert(address && typeof address !== 'string');
+  const a = await connect(address.port); const b = await connect(address.port);
+  b.socket.send(JSON.stringify({ type: 'settings', targetLanguage: 'de' }));
+  b.socket.send(JSON.stringify({ type: 'ping' })); await waitFor(b.messages, 'pong');
+  await app.broadcastChat({ author: 'Player', text: 'Hello' });
+  await waitFor(a.messages, 'chat'); await waitFor(b.messages, 'chat');
+  assert.equal((await waitFor(a.messages, 'chat')).translated, 'uk: Hello');
+  const german = await waitFor(b.messages, 'chat');
+  assert.equal(german.translated, 'de: Hello');
+  b.socket.send(JSON.stringify({ type: 'settings', targetLanguage: 'fr' }));
+  await waitFor(b.messages, 'chat');
+  const french = await waitFor(b.messages, 'chat');
+  assert.equal(french.id, german.id); assert.equal(french.translated, 'fr: Hello');
+  b.socket.send(JSON.stringify({ type: 'settings', targetLanguage: 'invalid' }));
+  assert.equal((await waitFor(b.messages, 'error')).code, 'invalid_message');
+});
+
+test('outgoing language is independent of native language and defaults to English', async t => {
+  const copies: string[] = [];
+  const app = createServer('127.0.0.1', 0, {
+    translateToUkrainian: async text => text,
+    translateToEnglish: async text => 'en: ' + text,
+    translateToLanguage: async (text, language) => language + ': ' + text,
+  }, async text => { copies.push(text); });
+  t.after(() => app.close()); await once(app.server, 'listening');
+  const address = app.server.address(); assert(address && typeof address !== 'string');
+  const client = await connect(address.port);
+  client.socket.send(JSON.stringify({ type: 'settings', targetLanguage: 'uk' }));
+  client.socket.send(JSON.stringify({ type: 'reply', id: randomUUID(), text: 'Hello', targetLanguage: 'pl' }));
+  assert.equal((await waitFor(client.messages, 'reply_ready')).translated, 'pl: Hello');
+  client.socket.send(JSON.stringify({ type: 'reply', id: randomUUID(), text: 'Hello' }));
+  assert.equal((await waitFor(client.messages, 'reply_ready')).translated, 'en: Hello');
+  client.socket.send(JSON.stringify({ type: 'reply', id: randomUUID(), text: 'Hello', targetLanguage: 'invalid' }));
+  assert.equal((await waitFor(client.messages, 'error')).code, 'invalid_message');
+  assert.deepEqual(copies, ['pl: Hello', 'en: Hello']);
+});

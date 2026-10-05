@@ -1,3 +1,5 @@
+import type { TranslationLanguage } from '../translation/languages.js';
+import { languageSchema } from './protocol.js';
 import type { ContextExplainer } from '../translation/contextExplainer.js';
 import { channelCommand, type GameSender, type GameSendResult } from '../zomboid/gameSender.js';
 import { randomUUID } from 'node:crypto';
@@ -6,22 +8,21 @@ import type { Translator } from '../translation/translator.js';
 import type { CopyText } from '../clipboard/clipboard.js';
 import type { IncomingChatMessage, SourceStatus } from '../types/index.js';
 import { clientMessageSchema, messageIdSchema, type ServerMessage } from './protocol.js';
-export function createServer(host: string, port: number, translator: Translator, copy: CopyText, gameSender?: GameSender, historyLimit = 10, explain?: ContextExplainer, translateIncoming?: (message: IncomingChatMessage) => Promise<string>) {
+export function createServer(host: string, port: number, translator: Translator, copy: CopyText, gameSender?: GameSender, historyLimit = 10, explain?: ContextExplainer, translateIncoming?: (message: IncomingChatMessage, language: TranslationLanguage) => Promise<string>) {
   const explanations = new Map<string, Promise<string>>();
   const history: Extract<ServerMessage, { type: 'chat' }>[] = [];
   let sourceStatus: SourceStatus | undefined;
   const translationJobs = new Set<Promise<void>>();
+  const languages = new WeakMap<WebSocket, TranslationLanguage>();
   let activeTranslations = 0;
   const translationWaiters: (() => void)[] = [];
-  async function translateChat(chat: Extract<ServerMessage, { type: 'chat' }>) {
+  async function translateChat(chat: Extract<ServerMessage, { type: 'chat' }>, socket: WebSocket, replayed = false) {
+    const language = languages.get(socket) ?? 'uk';
     if (activeTranslations < 3) activeTranslations++;
     else await new Promise<void>(resolve => translationWaiters.push(resolve));
     try {
-      const translated = await (translateIncoming ? translateIncoming({ author: chat.author, channel: chat.channel, text: chat.original }) : translator.translateToUkrainian(chat.original));
-      if (translated !== chat.translated) {
-        chat.translated = translated;
-        for (const socket of server.clients) send(socket, chat);
-      }
+      const translated = await (translateIncoming ? translateIncoming({ author: chat.author, channel: chat.channel, text: chat.original }, language) : translator.translateToLanguage ? translator.translateToLanguage(chat.original, language) : translator.translateToUkrainian(chat.original));
+      if ((languages.get(socket) ?? 'uk') === language && translated !== chat.original) send(socket, { ...chat, translated, targetLanguage: language, ...(replayed ? { replayed: true } : {}) });
     } catch {
       console.error('Chat translation failed; keeping original text.');
     } finally {
@@ -36,10 +37,19 @@ export function createServer(host: string, port: number, translator: Translator,
   // Serialize replies across clients so clipboard writes finish in arrival order.
   let replyQueue = Promise.resolve();
   server.on('connection', (socket, request) => {
+    const requested = languageSchema.safeParse(new URL(request.url ?? '/', 'http://localhost').searchParams.get('targetLanguage'));
+    languages.set(socket, requested.success ? requested.data : 'uk');
     console.log(`Client connected: ${request.socket.remoteAddress}`);
     send(socket, { type: 'status', status: 'connected', historyLimit, message: 'MeowLingo desktop ready' });
     if (sourceStatus) send(socket, { type: 'status', ...sourceStatus });
-    for (const chat of history.slice(-historyLimit)) send(socket, { ...chat, replayed: true });
+    const schedule = (chat: Extract<ServerMessage, { type: 'chat' }>, replayed = false) => {
+      send(socket, { ...chat, targetLanguage: languages.get(socket), ...(replayed ? { replayed: true } : {}) });
+      const job = translateChat(chat, socket, replayed);
+      translationJobs.add(job);
+      void job.finally(() => translationJobs.delete(job));
+      return job;
+    };
+    for (const chat of history.slice(-historyLimit)) void schedule(chat, true);
     socket.on('close', () => console.log('Client disconnected'));
     socket.on('error', (error) => console.error('Client error:', error.message));
     socket.on('message', (raw, isBinary) => {
@@ -52,6 +62,11 @@ export function createServer(host: string, port: number, translator: Translator,
       } catch {
         const id = messageIdSchema.safeParse(parsed);
         send(socket, { type: 'error', code: 'invalid_message', message: 'Expected a valid reply, explain or ping JSON message.', ...(id.success ? { id: id.data.id } : {}) });
+        return;
+      }
+      if (message.type === 'settings') {
+        languages.set(socket, message.targetLanguage);
+        for (const chat of history) void schedule(chat, true);
         return;
       }
       if (message.type === 'ping') { send(socket, { type: 'pong' }); return; }
@@ -79,8 +94,8 @@ export function createServer(host: string, port: number, translator: Translator,
         let copiedToClipboard = false;
         let translated = reply.text;
         const translationStarted = Date.now();
-        console.log(`Reply ${reply.id}: translating to English; clipboard will update when translation finishes.`);
-        try { translated = await translator.translateToEnglish(reply.text); }
+        console.log(`Reply ${reply.id}: translating to ${reply.targetLanguage}; clipboard will update when translation finishes.`);
+        try { translated = await (translator.translateToLanguage ? translator.translateToLanguage(reply.text, reply.targetLanguage) : translator.translateToEnglish(reply.text)); }
         catch { console.error('Reply translation failed; returning original text.'); }
         console.log(`Reply ${reply.id}: translation finished in ${Date.now() - translationStarted}ms.`);
         const baseCommand = channelCommand(reply.channel ?? 'Local');
@@ -119,8 +134,8 @@ export function createServer(host: string, port: number, translator: Translator,
       };
       history.push(chat);
       if (history.length > Math.max(200, historyLimit)) { const removed = history.shift(); if (removed) explanations.delete(removed.id); }
-      for (const socket of server.clients) send(socket, chat);
-      const job = translateChat(chat);
+      for (const socket of server.clients) send(socket, { ...chat, targetLanguage: languages.get(socket) });
+      const job = Promise.all([...server.clients].map(socket => translateChat(chat, socket))).then(() => {});
       translationJobs.add(job);
       void job.finally(() => translationJobs.delete(job));
       return job;

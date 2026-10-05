@@ -17,8 +17,7 @@ document.getElementById('accessibility-settings').onclick = async () => {
 async function refresh() {
   try { const data = await window.meowlingo.snapshot(); document.getElementById('status').textContent = `${data.running ? 'Running' : 'Stopped'} · ${data.clients} connected phone(s)`;
     document.getElementById('accessibility-warning').hidden = !data.requiresAccessibility || data.accessibilityTrusted;
-    document.getElementById('permission-details').textContent = data.permissionMessage ||
-      (data.permissionHelperPath ? 'Keyboard helper: ' + data.permissionHelperPath : '');
+    document.getElementById('permission-details').textContent = data.permissionMessage || '';
     const logs = document.getElementById('logs'); const bottom = logs.scrollHeight - logs.scrollTop - logs.clientHeight < 30;
     logs.textContent = data.logs.join('\n'); if (bottom) logs.scrollTop = logs.scrollHeight;
   } catch (error) { document.getElementById('status').textContent = error.message; }

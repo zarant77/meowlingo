@@ -14,29 +14,16 @@ for (const level of ['log', 'warn', 'error']) {
     if (logs.length > 500) logs.shift();
   };
 }
-let permissionStatus = { trusted: false, helperPath: '', message: 'Checking keyboard helper permissions…' };
-let permissionCheck;
-let lastPermissionCheck = 0;
+let permissionStatus = { trusted: false, message: '' };
 function accessibilityTrusted() {
-  return process.platform !== 'darwin' || (systemPreferences.isTrustedAccessibilityClient(false) && permissionStatus.trusted);
-}
-async function checkAccessibility(request = false) {
-  if (process.platform !== 'darwin') return;
-  if (permissionCheck) { await permissionCheck; if (request) return checkAccessibility(true); return; }
-  permissionCheck = (async () => {
-    try {
-      const helper = await import(pathToFileURL(path.join(__dirname, '../dist/zomboid/macGameInput.js')).href);
-      permissionStatus = { ...await helper.macInputPermissions(request), message: '' };
-    } catch (error) {
-      permissionStatus = { trusted: false, helperPath: '', message: 'Could not check keyboard helper permissions: ' + error.message };
-    } finally { lastPermissionCheck = Date.now(); }
-  })();
-  try { await permissionCheck; } finally { permissionCheck = undefined; }
+  return process.platform !== 'darwin' || systemPreferences.isTrustedAccessibilityClient(false);
 }
 async function requestAccessibility() {
   if (process.platform !== 'darwin') return;
-  if (!systemPreferences.isTrustedAccessibilityClient(false)) systemPreferences.isTrustedAccessibilityClient(true);
-  await checkAccessibility(true);
+  try {
+    const native = await import(pathToFileURL(path.join(__dirname, '../dist/zomboid/macGameInput.js')).href);
+    permissionStatus = { ...native.macInputPermissions(true), message: '' };
+  } catch (error) { permissionStatus = { trusted: false, message: 'Could not load macOS input module: ' + error.message }; }
 }
 function showWindow() { if (window) { window.show(); window.focus(); } }
 async function startClient() {
@@ -55,7 +42,6 @@ else {
     configPath = app.isPackaged ? path.join(app.getPath('userData'), 'config.json') :
       (process.env.MEOWLINGO_CONFIG_FILE || path.join(__dirname, '../config.json'));
     process.env.MEOWLINGO_CONFIG_FILE = configPath;
-    if (app.isPackaged && process.platform === 'darwin') process.env.MEOWLINGO_MAC_HELPER = path.join(process.resourcesPath, 'meowlingo-game-input');
     configModule = await import(pathToFileURL(path.join(__dirname, '../dist/config.js')).href);
     tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'assets/tray.png')).resize({ width: 20, height: 20 }));
     tray.setToolTip('MeowLingo');
@@ -79,8 +65,7 @@ else {
   });
 }
 ipcMain.handle('snapshot', () => {
-  if (process.platform === 'darwin' && !permissionCheck && Date.now() - lastPermissionCheck > 5000) void checkAccessibility();
-  return ({ logs, clients: desktop?.server.clients.size ?? 0, running: !!desktop?.server.address(), accessibilityTrusted: accessibilityTrusted(), requiresAccessibility: process.platform === 'darwin', permissionHelperPath: permissionStatus.helperPath, permissionMessage: permissionStatus.message, configPath });
+  return ({ logs, clients: desktop?.server.clients.size ?? 0, running: !!desktop?.server.address(), accessibilityTrusted: accessibilityTrusted(), requiresAccessibility: process.platform === 'darwin', permissionMessage: permissionStatus.message, configPath });
 });
 ipcMain.handle('settings', () => {
   const settings = configModule.loadConfig(configPath);

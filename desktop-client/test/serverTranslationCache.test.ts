@@ -80,7 +80,7 @@ test('stores explanation on the same row and keeps it when translation finishes 
       assert.deepEqual({ ...db.prepare('SELECT * FROM server_messages').get() }, {
         original: server.text, translation: 'Translation', explanation: 'Explanation',
       });
-      assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table'").get()?.count, 1);
+      assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table'").get()?.count, 2);
     } finally { db.close(); }
     for (let i = 0; i < 2; i++) {
       assert.equal(await cache.explain({ ...message, author: 'Player' }, [], async () => `Uncached ${i}`), `Uncached ${i}`);
@@ -92,7 +92,7 @@ test('stores explanation on the same row and keeps it when translation finishes 
   } finally { cache.close(); rmSync(directory, { recursive: true }); }
 });
 
-test('translation rows initially have no explanation and old translations migrate to one table', async () => {
+test('translation rows initially have no explanation and old translations migrate to the Ukrainian table', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'meowlingo-cache-'));
   const file = join(directory, 'cache.sqlite');
   const { DatabaseSync } = await import('node:sqlite');
@@ -109,7 +109,22 @@ test('translation rows initially have no explanation and old translations migrat
       assert.deepEqual({ ...db.prepare('SELECT * FROM server_messages').get() }, {
         original: server.text, translation: 'Saved translation', explanation: null,
       });
-      assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table'").get()?.count, 1);
+      assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table'").get()?.count, 2);
     } finally { db.close(); }
+  } finally { cache.close(); rmSync(directory, { recursive: true }); }
+});
+
+ test('keeps translations separate by language across restarts and clears all languages', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'meowlingo-cache-'));
+  const file = join(directory, 'cache.sqlite');
+  let cache = new ServerTranslationCache(file);
+  try {
+    assert.equal(await cache.translateLanguage(server, 'uk', async () => 'Ukrainian'), 'Ukrainian');
+    assert.equal(await cache.translateLanguage(server, 'de', async () => 'German'), 'German');
+    cache.close(); cache = new ServerTranslationCache(file);
+    assert.equal(await cache.translateLanguage(server, 'de', async () => { throw new Error('Should be cached'); }), 'German');
+    assert.equal(await cache.translateLanguage(server, 'uk', async () => { throw new Error('Should be cached'); }), 'Ukrainian');
+    cache.clear();
+    assert.equal(await cache.translateLanguage(server, 'de', async () => 'Fresh German'), 'Fresh German');
   } finally { cache.close(); rmSync(directory, { recursive: true }); }
 });

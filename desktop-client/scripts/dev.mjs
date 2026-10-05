@@ -1,10 +1,11 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { watch } from 'node:fs';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
+execFileSync(process.execPath, [fileURLToPath(new URL('./build-native.mjs', import.meta.url))], { cwd: fileURLToPath(new URL('../', import.meta.url)), stdio: 'inherit' });
 const root = fileURLToPath(new URL('../', import.meta.url));
 let electron;
 let stopping = false;

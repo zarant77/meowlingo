@@ -51,3 +51,9 @@ Reply results may include `gameSendMessage` with desktop diagnostics (foreground
 Replies optionally include `recipient` (1–100 characters, without quotes/newlines) for `Whisper`. Desktop formats `/whisper "nickname" translated text`. `Yell` maps to `/yell`. Missing whisper recipients disable automatic sending. Android's default destination is Local (`/say`).
 
 When Android returns to the foreground, it starts with its latest 10 session entries. New live messages then append normally. Replay uses only messages already processed by the running desktop; it does not import older log history when `MEOWLINGO_READ_HISTORY=false`.
+
+## Translation language
+
+Clients may set the `targetLanguage` WebSocket query parameter to an ISO language code (default: `uk`). Send `{"type":"settings","targetLanguage":"de"}` to change it while connected. The desktop replays retained messages with their existing IDs and updates their translations. Chat messages include `targetLanguage`; clients should ignore updates for an old language. Language selection is per connection. Replies accept an optional `targetLanguage` code (default: `en`) to choose the outgoing chat language independently of the incoming language. Context explanations retain the desktop-configured instructions.
+
+Supported codes: `uk`, `en`, `de`, `fr`, `es`, `it`, `pt`, `pl`, `nl`, `cs`, `sk`, `ro`, `hu`, `bg`, `el`, `sv`, `da`, `no`, `fi`, `et`, `lv`, `lt`, `hr`, `sr`, `sl`, `tr`, `ru`.

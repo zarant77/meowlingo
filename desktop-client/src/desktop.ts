@@ -4,7 +4,6 @@ import { defaultConfigPath } from './config.js';
 import { ServerTranslationCache, isServerMessage } from './translation/serverTranslationCache.js';
 import { OpenAITranslator } from './translation/openAITranslator.js';
 import { nativeGameSender } from './zomboid/gameSender.js';
-import { macInputHelper } from './zomboid/macGameInput.js';
 import type { DesktopConfig } from './config.js';
 import { advertiseDesktop } from './discovery/advertiser.js';
 import { createContextExplainer } from './translation/contextExplainer.js';
@@ -20,20 +19,15 @@ if (config.OPENAI_API_KEY) {
   try { cache = new ServerTranslationCache(join(cacheDirectory, 'translation-cache.sqlite')); }
   catch { console.error('Translation cache unavailable; translations will continue without caching.'); }
 }
-const translateIncoming = (message: import('./types/index.js').IncomingChatMessage) =>
+const translateIncoming = (message: import('./types/index.js').IncomingChatMessage, language: import('./translation/languages.js').TranslationLanguage = 'uk') =>
   cache && translator instanceof OpenAITranslator && isServerMessage(message)
-    ? cache.translate(message, text => translator.translateToUkrainianForCache(text))
-    : translator.translateToUkrainian(message.text);
+    ? cache.translateLanguage(message, language, text => translator.translateToLanguageForCache(text, language))
+    : translator.translateToLanguage?.(message.text, language) ?? translator.translateToUkrainian(message.text);
 const explain = createContextExplainer(config.OPENAI_API_KEY, config.OPENAI_MODEL, { instructions: config.instructions });
 const explainCached: typeof explain = (message, previous) => cache
   ? cache.explain(message, previous, explain)
   : explain(message, previous);
 const app = createServer(config.MEOWLINGO_HOST, config.MEOWLINGO_PORT, translator, copy, nativeGameSender(config.MEOWLINGO_AUTO_SEND, config.MEOWLINGO_INPUT_MODE), config.MEOWLINGO_HISTORY_COUNT, explainCached, translateIncoming);
-if (process.platform === 'darwin' && config.MEOWLINGO_AUTO_SEND) {
-  void macInputHelper()
-    .then(() => console.log('macOS keyboard helper ready. Keep Zomboid foreground when sending from Android.'))
-    .catch(error => console.error('macOS keyboard helper preparation failed:', error));
-}
 const source = mockChat ? new MockChatSource() : new ProjectZomboidLogSource({
   directory: config.MEOWLINGO_LOG_DIR,
   initialHistoryCount: config.MEOWLINGO_HISTORY_COUNT,
@@ -49,7 +43,7 @@ app.server.on('listening', () => {
   console.log(`MeowLingo listening at ws://${config.MEOWLINGO_HOST}:${config.MEOWLINGO_PORT}`);
   advertisement = advertiseDesktop(config.MEOWLINGO_HOST, config.MEOWLINGO_PORT, config.MEOWLINGO_DISCOVERY);
   console.log(`Game input: ${config.MEOWLINGO_AUTO_SEND ? 'enabled' : 'disabled'} (${process.platform}; requires foreground Zomboid)`);
-  console.log(`Translation: ${config.TRANSLATOR_PROVIDER === 'openai' && config.OPENAI_API_KEY ? `OpenAI (${config.OPENAI_MODEL})` : 'mock (text unchanged)'} · EN → UA / UA → EN`);
+  console.log(`Translation: ${config.TRANSLATOR_PROVIDER === 'openai' && config.OPENAI_API_KEY ? `OpenAI (${config.OPENAI_MODEL})` : 'mock (text unchanged)'} · incoming → mobile language / replies → selected chat language`);
   if (source instanceof MockChatSource) app.setSourceStatus({ status: 'source_watching', message: 'Mock chat input active' });
   sourceStart = source.start(message => { void app.broadcastChat(message).catch(error => console.error('Chat processing failed:', error)); })
     .catch(error => { console.error('Chat source failed:', error); app.setSourceStatus({ status: 'source_error', message: 'Could not start chat source.' }); });

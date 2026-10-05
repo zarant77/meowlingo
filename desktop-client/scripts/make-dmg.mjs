@@ -11,7 +11,7 @@ async function verifyBundleLinks(directory) {
   }
 }
 if (process.platform === 'darwin') {
-  const directory = (await readdir('out')).find(name => name === `MeowLingo-darwin-${process.arch}`);
+  const directory = (await readdir('out')).find(name => name === `MeowLingo-darwin-${process.env.MEOWLINGO_BUILD_ARCH || process.arch}`);
   if (!directory) throw new Error('Packaged macOS application not found');
   const stage = resolve('out/dmg-stage');
   await rm(stage, { recursive: true, force: true });
@@ -21,5 +21,14 @@ if (process.platform === 'darwin') {
   await symlink('/Applications', resolve(stage, 'Applications'));
   const output = resolve('out/make', `MeowLingo-${directory.split('-').at(-1)}.dmg`);
   execFileSync('/usr/bin/hdiutil', ['create', '-volname', 'MeowLingo', '-srcfolder', stage, '-ov', '-format', 'UDZO', output], { stdio: 'inherit' });
+  if (process.env.MAC_SIGNING_IDENTITY) {
+    execFileSync('/usr/bin/codesign', ['--sign', process.env.MAC_SIGNING_IDENTITY, '--timestamp', output], { stdio: 'inherit' });
+    if (process.env.APPLE_API_KEY_PATH) {
+      execFileSync('/usr/bin/xcrun', ['notarytool', 'submit', output, '--key', process.env.APPLE_API_KEY_PATH,
+        '--key-id', process.env.APPLE_API_KEY_ID, '--issuer', process.env.APPLE_API_ISSUER, '--wait'], { stdio: 'inherit' });
+      execFileSync('/usr/bin/xcrun', ['stapler', 'staple', output], { stdio: 'inherit' });
+      execFileSync('/usr/bin/xcrun', ['stapler', 'validate', output], { stdio: 'inherit' });
+    }
+  }
   await rm(stage, { recursive: true, force: true });
 }

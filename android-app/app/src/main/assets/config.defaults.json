@@ -5,5 +5,7 @@
   "whisperRecipient": "",
   "hiddenChannels": [],
   "channelColors": {},
-  "theme": "system"
+  "theme": "system",
+  "targetLanguage": "uk",
+  "chatLanguage": "en"
 }

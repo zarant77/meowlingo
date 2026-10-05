@@ -1,4 +1,4 @@
-import { macInputHelper } from './macGameInput.js';
+import { sendMacGameInput } from './macGameInput.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const execute = promisify(execFile);
@@ -56,13 +56,12 @@ export function nativeGameSender(enabled: boolean, inputMode: 'typing' | 'paste'
   return async (clipboardText) => {
     if (!enabled) return { gameSendStatus: 'disabled', gameSendMessage: 'MEOWLINGO_AUTO_SEND=false' };
     try {
-      const result = process.platform === 'darwin'
-        ? await execute(await macInputHelper(), [clipboardText, inputMode], { timeout: 120000 })
-        : process.platform === 'win32'
+      if (process.platform === 'darwin') return await sendMacGameInput(clipboardText, inputMode);
+      const result = process.platform === 'win32'
           ? await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command', powerShell], { timeout: inputMode === 'typing' ? 120000 : 15000, env: { ...process.env, MEOWLINGO_EXPECTED_CLIPBOARD: clipboardText, MEOWLINGO_INPUT_MODE: inputMode } })
           : undefined;
       if (!result) return { gameSendStatus: 'disabled', gameSendMessage: `Automatic input is unavailable on ${process.platform}.` };
-      if (process.platform === 'win32' || process.platform === 'darwin') {
+      if (process.platform === 'win32') {
         const response: unknown = JSON.parse(result.stdout.trim());
         if (response && typeof response === 'object' && 'gameSendStatus' in response &&
           ['keys_sent', 'not_focused', 'failed'].includes(String(response.gameSendStatus)) &&

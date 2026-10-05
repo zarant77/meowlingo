@@ -33,6 +33,8 @@ data class ChatState(
     val whisperRecipient: String = "",
     val replyChannel: String = "Local",
     val search: String = "",
+    val targetLanguage: String = "uk",
+    val chatLanguage: String = "en",
     val theme: String = "system",
     val channelColors: Map<String, String> = emptyMap(),
     val hiddenChannels: Set<String> = emptySet(),
@@ -59,6 +61,31 @@ class ChatSession private constructor(context: Context) {
     private var entriesAtBottom = true
     private var saveJob: Job? = null
     private var editedWhisperRecipient = false
+    private var editedChatLanguage = false
+    private var chatLanguageSaveJob: Job? = null
+    fun setChatLanguage(language: String) {
+        if (language !in com.catemup.meowlingo.config.translationLanguages) return
+        editedChatLanguage = true
+        mutable.update { it.copy(chatLanguage = language) }
+        chatLanguageSaveJob?.cancel()
+        chatLanguageSaveJob = scope.launch {
+            try { store.saveChatLanguage(language) }
+            catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not save chat language") }
+        }
+    }
+    private var editedLanguage = false
+    private var languageSaveJob: Job? = null
+    fun setTargetLanguage(language: String) {
+        if (language !in com.catemup.meowlingo.config.translationLanguages) return
+        editedLanguage = true
+        mutable.update { it.copy(targetLanguage = language) }
+        if (state.value.status == "Connected") socket.setTargetLanguage(language)
+        languageSaveJob?.cancel()
+        languageSaveJob = scope.launch {
+            try { store.saveTargetLanguage(language) }
+            catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not save translation language") }
+        }
+    }
     private var editedTheme = false
     private var themeSaveJob: Job? = null
     fun setTheme(theme: String) {
@@ -85,6 +112,19 @@ class ChatSession private constructor(context: Context) {
         }
     }
     init {
+        scope.launch {
+            try { val language = store.readChatLanguage(); if (!editedChatLanguage) mutable.update { it.copy(chatLanguage = language) } }
+            catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not load chat language") }
+        }
+        scope.launch {
+            try {
+                val language = store.readTargetLanguage()
+                if (!editedLanguage) {
+                    mutable.update { it.copy(targetLanguage = language) }
+                    if (state.value.status == "Connected") socket.setTargetLanguage(language)
+                }
+            } catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not load translation language") }
+        }
         scope.launch {
             try { val theme = store.readTheme(); if (!editedTheme) mutable.update { it.copy(theme = theme) } }
             catch (failure: Exception) { if (failure is CancellationException) throw failure; error("Could not load theme") }
@@ -154,11 +194,12 @@ class ChatSession private constructor(context: Context) {
     private fun open(address: String) {
         val token = ++generation
         mutable.update { it.copy(status = "Connecting", error = null) }
-        socket.connect(address,
+        val openingLanguage = state.value.targetLanguage
+        socket.connect(address, targetLanguage = openingLanguage,
             onStatus = { status -> scope.launch {
                 if (token != generation) return@launch
                 mutable.update { it.copy(status = status) }
-                if (status == "Connected") retrySeconds = 2
+                if (status == "Connected") { retrySeconds = 2; if (openingLanguage != state.value.targetLanguage) socket.setTargetLanguage(state.value.targetLanguage) }
                 if (status == "Disconnected") mutable.update { current -> current.copy(entries = current.entries.map {
                     if (it.explanationLoading) it.copy(explanationLoading = false, explanationError = "Disconnected. Please try again.") else it
                 }) }
@@ -228,7 +269,7 @@ class ChatSession private constructor(context: Context) {
         val id = UUID.randomUUID().toString()
         val channel = state.value.replyChannel
         mutable.update { it.copy(entries = (it.entries + ChatEntry(id, "You", trimmed, outgoing = true, delivery = "Pending", channel = channel))) }
-        if (!socket.send(Reply(id = id, text = trimmed, channel = channel, recipient = recipient))) {
+        if (!socket.send(Reply(id = id, text = trimmed, channel = channel, recipient = recipient, targetLanguage = state.value.chatLanguage))) {
             mutable.update { current -> current.copy(entries = current.entries.map { if (it.id == id) it.copy(delivery = "Send failed") else it }) }
             return false
         }
@@ -248,6 +289,7 @@ class ChatSession private constructor(context: Context) {
                 if (it.id == message.id || it.serverId == message.id) it.copy(explanation = message.explanation, explanationLoading = false, explanationError = message.error) else it
             }) }
             "chat" -> {
+                if (message.targetLanguage != null && message.targetLanguage != state.value.targetLanguage) return
                 val entry = ChatEntry(message.id!!, message.author!!, message.original!!, message.translated,
                     channel = message.channel ?: "General", timestamp = message.timestamp!!)
                 val read = message.replayed || visible && entriesAtBottom && matches(entry)
