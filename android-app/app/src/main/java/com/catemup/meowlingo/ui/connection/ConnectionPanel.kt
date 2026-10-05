@@ -14,8 +14,6 @@ import com.catemup.meowlingo.domain.DesktopEndpoint
 @Composable
 fun ConnectionPanel(state: ChatState, onAddress: (String) -> Unit, onConnect: () -> Unit,
     onDisconnect: () -> Unit, onEnableNotifications: () -> Unit, onFindDesktop: () -> Unit,
-    onChatLanguage: (String) -> Unit,
-    onTargetLanguage: (String) -> Unit,
     onTheme: (String) -> Unit,
     onChannelColor: (String, String) -> Unit,
     onAutoConnect: (Boolean) -> Unit, onSelectDesktop: (DesktopEndpoint) -> Unit) {
@@ -24,10 +22,6 @@ fun ConnectionPanel(state: ChatState, onAddress: (String) -> Unit, onConnect: ()
         Text("App settings", style = MaterialTheme.typography.headlineSmall)
         Text("Changes are saved automatically in this app's private config.json. Configure OpenAI on your desktop.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LanguagePicker("Native language", state.targetLanguage, onTargetLanguage)
-        Text("Incoming messages are translated into your native language.", style = MaterialTheme.typography.bodySmall)
-        LanguagePicker("Chat language", state.chatLanguage, onChatLanguage)
-        Text("Your messages are translated into the language you want to use in the game chat.", style = MaterialTheme.typography.bodySmall)
         Text("Theme", style = MaterialTheme.typography.titleMedium)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("light" to "Light", "dark" to "Dark", "system" to "Device theme").forEach { (value, label) ->
@@ -80,21 +74,5 @@ fun ConnectionPanel(state: ChatState, onAddress: (String) -> Unit, onConnect: ()
         TextButton(onClick = onEnableNotifications) { Text("Enable / manage notifications") }
         Text("Replies are copied to your desktop clipboard. Paste them into the game with Cmd/Ctrl+V.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun LanguagePicker(label: String, selected: String, onSelect: (String) -> Unit) {
-    Text(label, style = MaterialTheme.typography.titleMedium)
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-            Text(com.catemup.meowlingo.config.translationLanguages[selected] ?: selected)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.heightIn(max = 360.dp)) {
-            com.catemup.meowlingo.config.translationLanguages.forEach { (code, name) ->
-                DropdownMenuItem(text = { Text(name) }, onClick = { onSelect(code); expanded = false })
-            }
-        }
     }
 }

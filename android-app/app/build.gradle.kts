@@ -11,8 +11,8 @@ android {
         applicationId = "com.catemup.meowlingo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 4
+        versionName = "0.1.3"
     }
     val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")
     if (!releaseKeystore.isNullOrBlank()) {
@@ -32,6 +32,7 @@ android {
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
 dependencies {
+    implementation("com.google.mlkit:language-id:17.0.6")
     testImplementation("junit:junit:4.13.2")
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
     implementation("androidx.activity:activity-compose:1.10.1")

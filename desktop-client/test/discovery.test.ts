@@ -23,3 +23,19 @@ test('disabling discovery or binding loopback does not open a multicast service'
   const loopback = advertiseDesktop('127.0.0.1', 8765);
   await disabled.stop(); await disabled.stop(); await loopback.stop();
 });
+
+ test('broadcast discovery returns the same identity and configured WebSocket port', async t => {
+  const { startBroadcastDiscovery, DISCOVERY_REQUEST } = await import('../src/discovery/broadcast.js');
+  const { createSocket } = await import('node:dgram');
+  const { once } = await import('node:events');
+  const service = serviceDescription(9876, 'Test-PC');
+  const discovery = startBroadcastDiscovery(service, 0);
+  const client = createSocket('udp4');
+  t.after(() => { client.close(); discovery.stop(); });
+  await once(discovery.socket, 'listening');
+  client.bind(0); await once(client, 'listening');
+  const received = once(client, 'message', { signal: AbortSignal.timeout(2000) });
+  client.send(DISCOVERY_REQUEST, discovery.socket.address().port, '127.0.0.1');
+  const [data] = await received;
+  assert.deepEqual(JSON.parse(data.toString()), { app: 'meowlingo', version: '1', id: service.txt.id, name: service.name, port: 9876 });
+});

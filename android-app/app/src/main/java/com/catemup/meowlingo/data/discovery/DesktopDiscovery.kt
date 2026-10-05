@@ -25,6 +25,8 @@ class DesktopDiscovery(context: Context, private val onDesktops: (List<DesktopEn
     private val present = mutableSetOf<String>()
     private val found = linkedMapOf<String, DesktopEndpoint>()
     private var waitHint: Runnable? = null
+    private var broadcast: BroadcastDiscovery? = null
+    private val broadcastExpiry = mutableMapOf<String, Runnable>()
 
     fun start() {
         stop()
@@ -52,19 +54,28 @@ class DesktopDiscovery(context: Context, private val onDesktops: (List<DesktopEn
             }
             override fun onDiscoveryStopped(type: String) = current { onStatus("Discovery stopped") }
             override fun onStartDiscoveryFailed(type: String, code: Int) = current {
-                stop()
-                onStatus("Network discovery unavailable ($code). Use a manual address or try again.")
+                onStatus("Trying broadcast discovery…")
             }
             override fun onStopDiscoveryFailed(type: String, code: Int) { }
         }
         listener = discovery
         onDesktops(emptyList())
+        broadcast = BroadcastDiscovery { desktop -> handler.post {
+            if (generation != token) return@post
+            val key = "broadcast:${desktop.id}"
+            val changed = found[key] != desktop
+            found[key] = desktop
+            broadcastExpiry.remove(key)?.let(handler::removeCallbacks)
+            val expiry = Runnable { if (generation == token) { found.remove(key); broadcastExpiry.remove(key); publish() } }
+            broadcastExpiry[key] = expiry
+            handler.postDelayed(expiry, 12000)
+            if (changed) publish()
+        } }.also { it.start() }
         try {
             multicast = wifi?.createMulticastLock("MeowLingoDiscovery")?.apply { setReferenceCounted(false); acquire() }
             manager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discovery)
         } catch (error: Exception) {
-            stop()
-            onStatus("Network discovery unavailable: ${error.message ?: "unknown error"}. Use a manual address.")
+            onStatus("Trying broadcast discovery…")
         }
     }
     private fun publish() {
@@ -114,6 +125,8 @@ class DesktopDiscovery(context: Context, private val onDesktops: (List<DesktopEn
     }
     fun stop() {
         generation++
+        broadcast?.stop(); broadcast = null
+        broadcastExpiry.values.forEach(handler::removeCallbacks); broadcastExpiry.clear()
         waitHint?.let(handler::removeCallbacks)
         waitHint = null
         val previous = listener

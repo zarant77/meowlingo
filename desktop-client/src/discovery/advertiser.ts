@@ -1,3 +1,4 @@
+import { startBroadcastDiscovery } from './broadcast.js';
 import { createHash } from 'node:crypto';
 import { hostname } from 'node:os';
 import { Bonjour, type Service } from 'bonjour-service';
@@ -18,11 +19,13 @@ export function serviceDescription(port: number, computerName = hostname()) {
 }
 
 export function advertiseDesktop(host: string, port: number, enabled = true) {
+  let broadcast: ReturnType<typeof startBroadcastDiscovery> | undefined;
   let bonjour: Bonjour | undefined;
   let service: Service | undefined;
   if (!enabled || !['0.0.0.0', '::'].includes(host)) {
     console.log('LAN discovery disabled. Use a manual address (discovery requires a wildcard host).');
   } else {
+    broadcast = startBroadcastDiscovery(serviceDescription(port));
     try {
       bonjour = new Bonjour({}, (error: Error) => console.error('LAN discovery error (manual connection remains available):', error.message));
       service = bonjour.publish(serviceDescription(port));
@@ -39,6 +42,7 @@ export function advertiseDesktop(host: string, port: number, enabled = true) {
     async stop() {
       if (stopped) return;
       stopped = true;
+      broadcast?.stop();
       if (!bonjour) return;
       const instance = bonjour;
       // Give the goodbye announcement time to complete, but never block shutdown indefinitely.

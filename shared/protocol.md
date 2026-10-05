@@ -56,4 +56,4 @@ When Android returns to the foreground, it starts with its latest 10 session ent
 
 Clients may set the `targetLanguage` WebSocket query parameter to an ISO language code (default: `uk`). Send `{"type":"settings","targetLanguage":"de"}` to change it while connected. The desktop replays retained messages with their existing IDs and updates their translations. Chat messages include `targetLanguage`; clients should ignore updates for an old language. Language selection is per connection. Replies accept an optional `targetLanguage` code (default: `en`) to choose the outgoing chat language independently of the incoming language. Context explanations retain the desktop-configured instructions.
 
-Supported codes: `uk`, `en`, `de`, `fr`, `es`, `it`, `pt`, `pl`, `nl`, `cs`, `sk`, `ro`, `hu`, `bg`, `el`, `sv`, `da`, `no`, `fi`, `et`, `lv`, `lt`, `hr`, `sr`, `sl`, `tr`, `ru`.
+Supported codes: `uk`, `en`, `de`, `fr`, `es`, `it`, `pt`, `pl`, `nl`, `cs`, `sk`, `ro`, `hu`, `bg`, `el`, `sv`, `da`, `no`, `fi`, `et`, `lv`, `lt`, `hr`, `sr`, `sl`, `tr`.

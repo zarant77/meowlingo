@@ -10,6 +10,7 @@ module.exports = {
     name: 'MeowLingo', executableName: 'MeowLingo', appBundleId: 'com.catemup.meowlingo.desktop',
     asar: { unpack: '{**/node_modules/clipboardy/fallbacks/**,**/native/*.node}' },
     ...(process.platform === 'darwin' ? {
+      extendInfo: { NSLocalNetworkUsageDescription: 'MeowLingo connects to your phone and discovers devices on your local network.', NSBonjourServices: ['_meowlingo._tcp'] },
       osxSign: { identity: signingIdentity || '-', identityValidation: !!signingIdentity,
         preAutoEntitlements: false, keychain: process.env.MAC_SIGNING_KEYCHAIN,
         optionsForFile: () => ({ hardenedRuntime: true, entitlements: path.resolve(signingIdentity ? 'electron/entitlements/mac.plist' : 'electron/entitlements/mac-adhoc.plist') }),

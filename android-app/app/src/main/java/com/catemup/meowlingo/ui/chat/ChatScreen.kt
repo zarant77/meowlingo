@@ -12,6 +12,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import com.catemup.meowlingo.data.replyChannels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,6 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.catemup.meowlingo.domain.ChatEntry
@@ -76,22 +81,31 @@ fun ChatScreen(model: ChatViewModel, onEnableNotifications: () -> Unit, onReques
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).imePadding()) {
             Surface(color = MaterialTheme.colorScheme.surface) {
                 Column {
-                    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Image(painterResource(R.drawable.app_icon), contentDescription = "MeowLingo",
-                            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(16.dp)))
-                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                            Text("MeowLingo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Box(Modifier.size(7.dp).background(if (state.status == "Connected") Color(0xFF39AF86) else MaterialTheme.colorScheme.outline, CircleShape))
-                                Text(if (state.status == "Connected") when (state.sourceState) {
-                                    "source_watching" -> "Game chat · live"
-                                    "source_error" -> "Log reader needs attention"
-                                    else -> "Connected · waiting for game"
-                                } else state.status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        val titleStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        val titleWidth = with(LocalDensity.current) {
+                            rememberTextMeasurer().measure(AnnotatedString("MeowLingo"), style = titleStyle).size.width.toDp()
                         }
-                        IconButton(onClick = { showSearch = !showSearch; if (!showSearch) model.search("") }) { Icon(Icons.Default.Search, "Search messages") }
-                        IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Connection settings") }
+                        // Reserve space for the logo, both language pickers and two 48 dp actions.
+                        val showTitle = maxWidth >= 296.dp + titleWidth
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(32.dp).semantics { contentDescription = "MeowLingo: ${state.status}" }) {
+                                Image(painterResource(R.drawable.app_icon), contentDescription = null,
+                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)))
+                                Box(Modifier.align(Alignment.BottomEnd).size(7.dp).background(
+                                    if (state.status == "Connected") Color(0xFF39AF86) else MaterialTheme.colorScheme.outline, CircleShape))
+                            }
+                            if (showTitle) {
+                                Spacer(Modifier.width(8.dp))
+                                Text("MeowLingo", style = titleStyle, maxLines = 1)
+                            }
+                            Spacer(Modifier.weight(1f))
+                            HeaderLanguagePicker(state.targetLanguage, "Native language", incoming = true, onSelect = model::setTargetLanguage)
+                            Spacer(Modifier.width(4.dp))
+                            HeaderLanguagePicker(state.chatLanguage, "Chat language", incoming = false, onSelect = model::setChatLanguage)
+                            IconButton(onClick = { showSearch = !showSearch; if (!showSearch) model.search("") }) { Icon(Icons.Default.Search, "Search messages") }
+                            IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Connection settings") }
+                        }
                     }
                     if (showSearch) OutlinedTextField(value = state.search, onValueChange = model::search,
                         placeholder = { Text("Search messages or players") }, singleLine = true,
@@ -154,7 +168,7 @@ fun ChatScreen(model: ChatViewModel, onEnableNotifications: () -> Unit, onReques
         ConnectionPanel(state, model::address,
             onConnect = { if (model.connect()) { settings = false; onRequestNotifications() } },
             onDisconnect = model::disconnect, onEnableNotifications = onEnableNotifications,
-            onChatLanguage = model::setChatLanguage, onTargetLanguage = model::setTargetLanguage, onTheme = model::setTheme, onChannelColor = model::setChannelColor,
+            onTheme = model::setTheme, onChannelColor = model::setChannelColor,
             onFindDesktop = model::findDesktop, onAutoConnect = model::setAutoConnect,
             onSelectDesktop = { if (model.connectToDesktop(it)) { settings = false; onRequestNotifications() } })
     }
@@ -187,6 +201,7 @@ private fun MessageBubble(entry: ChatEntry, onExplain: () -> Unit, onWhisper: ()
         DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(entry.timestamp))
     }.getOrDefault("") }
     val different = entry.translated != null && entry.translated != entry.original
+    val displayedText = if (showOriginal) entry.original else entry.translated ?: entry.original
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (entry.outgoing) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.Bottom) {
         Surface(modifier = Modifier.widthIn(max = 320.dp).weight(1f, fill = false).combinedClickable(
             enabled = !entry.outgoing, onClick = {}, onLongClick = onWhisper, onLongClickLabel = "Whisper to ${entry.author}"),
@@ -198,9 +213,10 @@ private fun MessageBubble(entry: ChatEntry, onExplain: () -> Unit, onWhisper: ()
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (entry.outgoing) "You" else entry.author, style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    MessageLanguageFlag(displayedText)
                     Text(time, style = MaterialTheme.typography.labelSmall, color = channelForeground(entry.channel).copy(alpha = 0.7f))
                 }
-                LinkedMessageText(if (showOriginal) entry.original else entry.translated ?: entry.original)
+                LinkedMessageText(displayedText)
                 if (!entry.outgoing && showExplanation) {
                     HorizontalDivider(modifier = Modifier.padding(top = 6.dp),
                         color = channelForeground(entry.channel).copy(alpha = 0.25f))
@@ -246,5 +262,45 @@ private fun MessageBubble(entry: ChatEntry, onExplain: () -> Unit, onWhisper: ()
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HeaderLanguagePicker(selectedCode: String, label: String, incoming: Boolean, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val languages = com.catemup.meowlingo.config.translationLanguages
+    val flags = com.catemup.meowlingo.config.languageFlags
+    Box {
+        OutlinedButton(onClick = { expanded = true }, contentPadding = PaddingValues(horizontal = 4.dp),
+            modifier = Modifier.width(76.dp).heightIn(min = 48.dp).semantics { contentDescription = "$label: ${languages[selectedCode]}" }) {
+            Text(if (incoming) "↓" else "↑", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.width(2.dp))
+            Text(flags[selectedCode].orEmpty(), style = MaterialTheme.typography.titleLarge)
+            Icon(Icons.Default.ArrowDropDown, null)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.heightIn(max = 360.dp)) {
+            languages.forEach { (code, name) ->
+                DropdownMenuItem(
+                    text = { Text(flags[code].orEmpty(), style = MaterialTheme.typography.titleLarge) },
+                    modifier = Modifier.width(76.dp).heightIn(min = 48.dp).semantics { contentDescription = "$label: $name"; selected = code == selectedCode },
+                    trailingIcon = { if (code == selectedCode) Icon(Icons.Default.Check, null) },
+                    onClick = { onSelect(code); expanded = false })
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageLanguageFlag(text: String) {
+    var language by remember(text) { mutableStateOf<String?>(null) }
+    LaunchedEffect(text) {
+        language = com.catemup.meowlingo.data.MessageLanguageDetector.identify(text)
+    }
+    val flag = com.catemup.meowlingo.config.languageFlags[language]
+    if (flag != null) {
+        Text(flag, style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.semantics {
+                contentDescription = "Message language: ${com.catemup.meowlingo.config.translationLanguages[language]}"
+            })
     }
 }
