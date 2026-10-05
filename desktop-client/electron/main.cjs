@@ -51,6 +51,7 @@ else {
   app.on('second-instance', showWindow);
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.squirrel.MeowLingo.MeowLingo');
+    if (process.platform === 'darwin') app.dock?.setIcon(path.join(__dirname, 'assets/icon.png'));
     configPath = app.isPackaged ? path.join(app.getPath('userData'), 'config.json') :
       (process.env.MEOWLINGO_CONFIG_FILE || path.join(__dirname, '../config.json'));
     process.env.MEOWLINGO_CONFIG_FILE = configPath;
@@ -60,7 +61,7 @@ else {
     tray.setToolTip('MeowLingo');
     tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open MeowLingo', click: showWindow }, { label: 'Quit', click: () => app.quit() }]));
     tray.on('click', showWindow);
-    window = new BrowserWindow({ width: 860, height: 700, minWidth: 600, minHeight: 500, title: 'MeowLingo',
+    window = new BrowserWindow({ width: 860, height: 700, minWidth: 600, minHeight: 500, title: 'MeowLingo', icon: path.join(__dirname, 'assets/icon.png'),
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', event => event.preventDefault());

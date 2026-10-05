@@ -4,6 +4,10 @@ import com.catemup.meowlingo.ui.theme.LocalDarkTheme
 import com.catemup.meowlingo.config.LocalChannelColors
 import com.catemup.meowlingo.config.channelBackground
 import com.catemup.meowlingo.config.channelForeground
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import com.catemup.meowlingo.R
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.selection.toggleable
@@ -73,9 +77,8 @@ fun ChatScreen(model: ChatViewModel, onEnableNotifications: () -> Unit, onReques
             Surface(color = MaterialTheme.colorScheme.surface) {
                 Column {
                     Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(44.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
-                            Text("M", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        }
+                        Image(painterResource(R.drawable.app_icon), contentDescription = "MeowLingo",
+                            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(16.dp)))
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text("MeowLingo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

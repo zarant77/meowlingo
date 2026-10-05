@@ -9,6 +9,6 @@ module.exports = {
   },
   makers: [
     { name: '@electron-forge/maker-zip', platforms: ['darwin'] },
-    { name: '@electron-forge/maker-squirrel', platforms: ['win32'], config: { name: 'MeowLingo', setupExe: 'MeowLingo-Setup.exe' } },
+    { name: '@electron-forge/maker-squirrel', platforms: ['win32'], config: { name: 'MeowLingo', setupExe: 'MeowLingo-Setup.exe', setupIcon: path.resolve('electron/assets/icon.ico') } },
   ],
 };
